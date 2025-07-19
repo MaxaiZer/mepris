@@ -1,0 +1,12 @@
+WHITESPACE = _{ " " | "\t" }
+
+expr       = { or_expr }
+or_expr    = { and_expr ~ ( "||" ~ and_expr )* }
+and_expr   = { not_expr ~ ( "&&" ~ not_expr )* }
+not_expr   = { not* ~ atom }
+not        = { "!" }
+atom       = { ident | "(" ~ expr ~ ")" }
+ident      = @{ idlike | os }
+idlike     = { "%" ~ word }
+os         = { word }
+word       = @{ (ASCII_ALPHANUMERIC | "_" | "-")+ }

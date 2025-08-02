@@ -1,8 +1,11 @@
-name: Rust
+name: Main
 
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - ".github/**"
+      - "README.md"
     
 env:
   CARGO_TERM_COLOR: always

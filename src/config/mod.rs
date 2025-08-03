@@ -110,10 +110,11 @@ pub enum OsExpr {
 impl OsExpr {}
 
 fn parse_term(term: &str) -> OsCond {
-    if let Some(rest) = term.strip_prefix('%') {
+    let norm = term.to_ascii_lowercase();
+    if let Some(rest) = norm.strip_prefix('%') {
         OsCond::IdLike(rest.to_string())
     } else {
-        OsCond::Os(term.to_string())
+        OsCond::Os(norm.to_string())
     }
 }
 
@@ -305,6 +306,7 @@ pub struct Config {
 fn test_os_expr() {
     let inputs = vec![
         ("ubuntu", true),
+        ("Ubuntu", true),
         ("debian", false),
         ("%debian", true),
         ("!%debian", false),

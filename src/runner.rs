@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     io::{self, Write},
     path::Path,
     process::{Command, Stdio},
@@ -27,11 +26,17 @@ pub trait StateSaver {
     fn save(&self, info: &RunState) -> Result<()>;
 }
 
+#[derive(Default)]
+pub struct StepDryRun {
+    pub id: String,
+    pub missing_shells: Vec<String>,
+    pub package_manager: Option<PackageManager>,
+    pub packages_to_install: Vec<String>,
+}
+
 pub struct DryRunPlan {
-    pub steps_to_run: Vec<String>,
+    pub steps_to_run: Vec<StepDryRun>,
     pub steps_ignored_by_when: Vec<String>,
-    pub missing_shells: HashMap<String, Vec<String>>,
-    pub packages_to_install: HashMap<String, Vec<String>>,
 }
 
 pub fn run(
@@ -87,9 +92,8 @@ fn run_dry(steps: &[&Step], script_checker: &mut dyn ScriptChecker) -> Result<Dr
     let mut res = DryRunPlan {
         steps_to_run: vec![],
         steps_ignored_by_when: vec![],
-        missing_shells: HashMap::new(),
-        packages_to_install: HashMap::new(),
     };
+    let default_package_manager = default_package_manager(OS_INFO.platform)?;
 
     for step in steps {
         if let Some(when_script) = &step.when_script {
@@ -107,11 +111,15 @@ fn run_dry(steps: &[&Step], script_checker: &mut dyn ScriptChecker) -> Result<Dr
             }
         }
 
-        res.steps_to_run.push(step.id.clone());
+        let mut step_dry_run = StepDryRun {
+            id: step.id.clone(),
+            ..Default::default()
+        };
 
         if !step.packages.is_empty() {
-            res.packages_to_install
-                .insert(step.id.clone(), step.packages.clone());
+            step_dry_run.package_manager =
+                Some(step_package_manager(&default_package_manager, step));
+            step_dry_run.packages_to_install = step.packages.clone();
         }
 
         let not_available_shells = step
@@ -121,11 +129,11 @@ fn run_dry(steps: &[&Step], script_checker: &mut dyn ScriptChecker) -> Result<Dr
             .map(|s| s.get_command())
             .collect::<Vec<&str>>();
         if !not_available_shells.is_empty() {
-            res.missing_shells.insert(
-                step.id.clone(),
-                not_available_shells.iter().map(|s| s.to_string()).collect(),
-            );
+            step_dry_run.missing_shells =
+                not_available_shells.iter().map(|s| s.to_string()).collect();
         }
+
+        res.steps_to_run.push(step_dry_run);
     }
 
     Ok(res)
@@ -398,10 +406,10 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert!(plan.missing_shells.contains_key(&steps[0].id));
-        let shells = plan.missing_shells.get(&steps[0].id).unwrap();
+        assert_eq!(plan.steps_to_run.len(), 1);
+        assert!(!plan.steps_to_run[0].missing_shells.is_empty());
         assert!(
-            shells.contains(
+            plan.steps_to_run[0].missing_shells.contains(
                 &steps[0]
                     .script
                     .as_ref()

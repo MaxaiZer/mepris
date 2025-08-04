@@ -114,20 +114,18 @@ fn print_info(
             .join(", ")
     };
 
-    for step_id in &dry_run_plan.steps_to_run {
+    for step in &dry_run_plan.steps_to_run {
+        let step_id = step.id.as_str();
         writeln!(out, "🚀 Would run step '{step_id}'")?;
 
-        if dry_run_plan.packages_to_install.contains_key(step_id) {
-            let packages = dry_run_plan
-                .packages_to_install
-                .get(step_id)
-                .unwrap()
-                .join(", ");
-            writeln!(out, "📦 Would install packages {packages}")?;
+        if !step.packages_to_install.is_empty() {
+            let packages = step.packages_to_install.join(", ");
+            let manager = step.package_manager.clone().unwrap().command();
+            writeln!(out, "📦 Would install packages {packages} ({manager})")?;
         }
 
-        if dry_run_plan.missing_shells.contains_key(step_id) {
-            let shells = dry_run_plan.missing_shells.get(step_id).unwrap().join(", ");
+        if !step.missing_shells.is_empty() {
+            let shells = step.missing_shells.join(", ");
             writeln!(
                 out,
                 "⚠️ Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",

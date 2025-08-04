@@ -89,7 +89,7 @@ impl PackageManager {
             Self::Zypper => vec![build("sudo", &["zypper", "install", "-y"], pkgs)],
             Self::Yay => vec![build("yay", &["-S", "--noconfirm"], pkgs)],
             Self::Brew => vec![build("brew", &["install"], pkgs)],
-            Self::Scoop => vec![build("scoop", &["install"], pkgs)],
+            Self::Scoop => vec![build("scoop.cmd", &["install"], pkgs)],
             Self::Choco => vec![build("choco", &["install", "-y"], pkgs)],
         }
     }

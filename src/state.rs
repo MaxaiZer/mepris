@@ -27,7 +27,7 @@ pub fn get<T: DeserializeOwned>() -> Result<T> {
 
 fn get_state_path() -> Result<PathBuf> {
     let dirs = ProjectDirs::from("", "", "mepris").context("Could not get project dirs")?;
-    let state_dir = dirs.state_dir().context("Could not get state dir")?;
-    fs::create_dir_all(state_dir).context("Failed to create state directory")?;
-    Ok(state_dir.join("state.json"))
+    let data_dir = dirs.data_dir();
+    fs::create_dir_all(data_dir).context("Failed to create data directory")?;
+    Ok(data_dir.join("state.json"))
 }

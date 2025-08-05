@@ -120,15 +120,25 @@ fn print_info(
 
         if !step.packages_to_install.is_empty() {
             let packages = step.packages_to_install.join(", ");
-            let manager = step.package_manager.clone().unwrap().command();
-            writeln!(out, "📦 Would install packages {packages} ({manager})")?;
+            let manager_info = &step.package_manager.as_ref().unwrap();
+            writeln!(
+                out,
+                "📦 Would install packages {packages} ({})",
+                manager_info.name
+            )?;
+            if !manager_info.installed {
+                writeln!(
+                    out,
+                    " ⚠️Step '{step_id}' uses package manager that is not currently available. Make sure it's installed in the previous steps",
+                )?;
+            }
         }
 
         if !step.missing_shells.is_empty() {
             let shells = step.missing_shells.join(", ");
             writeln!(
                 out,
-                "⚠️ Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",
+                " ⚠️Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",
             )?;
         }
     }

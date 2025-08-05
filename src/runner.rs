@@ -30,8 +30,13 @@ pub trait StateSaver {
 pub struct StepDryRun {
     pub id: String,
     pub missing_shells: Vec<String>,
-    pub package_manager: Option<PackageManager>,
+    pub package_manager: Option<PackageManagerInfo>,
     pub packages_to_install: Vec<String>,
+}
+
+pub struct PackageManagerInfo {
+    pub name: String,
+    pub installed: bool,
 }
 
 pub struct DryRunPlan {
@@ -73,7 +78,7 @@ pub fn run(
             })
             .is_err()
         {
-            writeln!(out, "⚠️Failed to save run state")?;
+            writeln!(out, " ⚠️Failed to save run state")?;
         }
 
         writeln!(out, "🚀 Running step '{}'...", step.id)?;
@@ -82,7 +87,7 @@ pub fn run(
     }
 
     if state_saver.save(&RunState { last_step_id: None }).is_err() {
-        writeln!(out, "⚠️Failed to save run state")?;
+        writeln!(out, " ⚠️Failed to save run state")?;
     }
 
     Ok(None)
@@ -117,8 +122,12 @@ fn run_dry(steps: &[&Step], script_checker: &mut dyn ScriptChecker) -> Result<Dr
         };
 
         if !step.packages.is_empty() {
-            step_dry_run.package_manager =
-                Some(step_package_manager(&default_package_manager, step));
+            let package_manager = step_package_manager(&default_package_manager, step);
+
+            step_dry_run.package_manager = Some(PackageManagerInfo {
+                name: package_manager.command().to_string(),
+                installed: which(package_manager.command()).is_ok(),
+            });
             step_dry_run.packages_to_install = step.packages.clone();
         }
 
@@ -418,6 +427,39 @@ mod tests {
                     .get_command()
                     .to_string()
             )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_dry_warns_abount_unavailable_package_manager() -> Result<()> {
+        let mut output = Vec::new();
+        mock_available_shells(HashSet::from_iter([Shell::Bash]));
+
+        let steps = vec![Step {
+            id: "step".to_string(),
+            packages: vec!["git".to_string()],
+            package_manager: Some(PackageManager::Choco),
+            ..Default::default()
+        }];
+
+        let plan = run(
+            &steps.iter().collect::<Vec<&Step>>(),
+            &RunParameters { dry_run: true },
+            &FakeStateSaver,
+            &mut DefaultScriptChecker::new(),
+            &mut output,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(plan.steps_to_run.len(), 1);
+        assert!(
+            !plan.steps_to_run[0]
+                .package_manager
+                .as_ref()
+                .unwrap()
+                .installed
         );
         Ok(())
     }

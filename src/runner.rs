@@ -44,6 +44,26 @@ pub struct DryRunPlan {
     pub steps_ignored_by_when: Vec<String>,
 }
 
+struct Logger<'a, W: Write> {
+    pub current_step: usize,
+    pub steps_count: usize,
+    pub out: &'a mut W,
+}
+
+impl<'a, W: Write> Logger<'a, W> {
+    fn log(&mut self, str: &str) -> std::io::Result<()> {
+        let width = self.steps_count.to_string().len();
+        let progress = format!(
+            "[{:>width$}/{}]",
+            self.current_step,
+            self.steps_count,
+            width = width
+        );
+
+        writeln!(self.out, "{}", str.replace("PROGRESS", &progress))
+    }
+}
+
 pub fn run(
     steps: &[&Step],
     params: &RunParameters,
@@ -58,17 +78,30 @@ pub fn run(
     }
 
     let default_package_manager = default_package_manager(OS_INFO.platform)?;
+    let mut logger = Logger {
+        current_step: 0,
+        steps_count: steps.len(),
+        out,
+    };
 
-    for step in steps {
+    for (i, step) in steps.iter().enumerate() {
+        logger.current_step = i + 1;
+
         if let Some(when_script) = &step.when_script {
             match run_script(
                 when_script,
                 Path::new(&step.source_file).parent().unwrap(),
                 script_checker,
-                out,
+                logger.out,
             ) {
                 Ok(()) => (),
-                Err(_) => continue,
+                Err(_) => {
+                    logger.log(&format!(
+                        "⏭️ PROGRESS Step '{}' skipped due to failed when script",
+                        step.id
+                    ))?;
+                    continue;
+                }
             }
         }
 
@@ -78,17 +111,19 @@ pub fn run(
             })
             .is_err()
         {
-            writeln!(out, " ⚠️Failed to save run state")?;
+            logger.log(" ⚠️Failed to save run state")?;
         }
 
-        writeln!(out, "🚀 Running step '{}'...", step.id)?;
-        run_step(step, &default_package_manager, script_checker, out)?;
-        writeln!(out, "✅ Step '{}' complete", step.id)?;
+        logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
+        run_step(step, &default_package_manager, script_checker, &mut logger)?;
+        logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
     }
 
     if state_saver.save(&RunState { last_step_id: None }).is_err() {
         writeln!(out, " ⚠️Failed to save run state")?;
     }
+
+    writeln!(out, "✅ Run completed")?;
 
     Ok(None)
 }
@@ -186,24 +221,24 @@ fn run_step(
     step: &Step,
     default_package_manager: &PackageManager,
     script_checker: &mut dyn ScriptChecker,
-    out: &mut impl Write,
+    logger: &mut Logger<impl Write>,
 ) -> Result<()> {
     let step_dir = Path::new(&step.source_file).parent().unwrap();
 
     if let Some(pre_script) = &step.pre_script {
-        writeln!(out, "⚙️ Running pre-script...")?;
-        run_script(pre_script, step_dir, script_checker, out).context(format!(
+        logger.log("⚙️ PROGRESS Running pre-script...")?;
+        run_script(pre_script, step_dir, script_checker, logger.out).context(format!(
             "Failed to run pre_script in file {} step '{}'",
             step.source_file, step.id
         ))?;
     }
     if !step.packages.is_empty() {
         let manager = step_package_manager(default_package_manager, step);
-        install_packages(&step.packages, &manager, out)?;
+        install_packages(&step.packages, &manager, logger)?;
     }
     if let Some(script) = &step.script {
-        writeln!(out, "⚙️ Running script...")?;
-        run_script(script, step_dir, script_checker, out).context(format!(
+        logger.log("⚙️ PROGRESS Running script...")?;
+        run_script(script, step_dir, script_checker, logger.out).context(format!(
             "Failed to run script in file {} step '{}'",
             step.source_file, step.id
         ))?;
@@ -302,13 +337,16 @@ pub fn step_package_manager(default_manager: &PackageManager, step: &Step) -> Pa
 fn install_packages(
     packages: &[String],
     manager: &PackageManager,
-    out: &mut impl Write,
+    logger: &mut Logger<impl Write>,
 ) -> Result<()> {
     if which(manager.command()).is_err() {
         bail!("Package manager {} not found", manager.command());
     }
 
-    writeln!(out, "📦 Installing packages: {}", packages.join(", "))?;
+    logger.log(&format!(
+        "📦 PROGRESS Installing packages: {}",
+        packages.join(", ")
+    ))?;
 
     let commands = manager.commands_to_install(packages);
     for cmd in commands {

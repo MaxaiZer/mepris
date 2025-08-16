@@ -1,7 +1,9 @@
 use std::{
-    io::{self, Write},
+    io::{self, BufRead, BufReader, Write},
     path::Path,
     process::{Command, Stdio},
+    sync::mpsc,
+    thread,
 };
 
 use crate::{
@@ -277,20 +279,40 @@ fn run_script(
         .as_mut()
         .unwrap()
         .write_all(script.code.as_bytes())?;
+    drop(child.stdin.take());
 
-    let output = child.wait_with_output()?;
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let (tx, rx) = mpsc::channel();
 
-    if !stdout.is_empty() {
-        writeln!(out, "{stdout}")?;
+    let tx1 = tx.clone();
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            tx1.send(line).unwrap();
+        }
+    });
+
+    let tx2 = tx.clone();
+    thread::spawn(move || {
+        for line in BufReader::new(stderr).lines() {
+            let line = line.unwrap();
+            tx2.send(line).unwrap();
+        }
+    });
+
+    drop(tx);
+    for line in rx {
+        writeln!(out, "{line}")?;
     }
-
-    if !output.status.success() {
-        bail!("{} script failed:\nstderr:\n{}", cmd, stderr);
+    let status = child.wait()?;
+    if !status.success() {
+        match status.code() {
+            Some(code) => bail!("{} script failed with code {}", cmd, code),
+            None => bail!("{} script terminated by signal", cmd),
+        }
     }
-
     Ok(())
 }
 

@@ -139,7 +139,7 @@ steps:
 ## CLI Usage
 
 ```bash
-mepris run -f config.yaml [--tag TAG] [--step STEP] [--dry-run]  
+mepris run -f config.yaml [--tag TAG] [--step STEP] [-i] [--dry-run]  
 # Execute steps from configuration file  
 
 mepris resume [--dry-run]  

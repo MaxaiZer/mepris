@@ -23,6 +23,7 @@ impl runner::StateSaver for RunStateSaver {
             file: self.file.clone(),
             tags: self.tags.clone(),
             steps: self.steps.clone(),
+            interactive: state.interactive,
             last_step_id: state.last_step_id.clone(),
         })
     }
@@ -33,6 +34,7 @@ pub struct RunInfo {
     pub file: String,
     pub tags: Vec<String>,
     pub steps: Vec<String>,
+    pub interactive: bool,
     pub last_step_id: Option<String>,
 }
 

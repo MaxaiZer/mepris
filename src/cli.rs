@@ -29,13 +29,27 @@ pub struct RunArgs {
     pub steps: Vec<String>,
     #[arg(skip)]
     pub start_step_id: Option<String>,
-    #[arg(long)]
+    #[arg(
+        short,
+        long,
+        help = "Run in interactive mode, asking for confirmation before each step"
+    )]
+    pub interactive: bool,
+    #[arg(
+        long,
+        help = "Do a dry-run without executing scripts or installing packages"
+    )]
     pub dry_run: bool,
 }
 
 #[derive(Args)]
 pub struct ResumeArgs {
     #[arg(long)]
+    pub interactive: bool,
+    #[arg(
+        long,
+        help = "Do a dry-run without executing scripts or installing packages"
+    )]
     pub dry_run: bool,
 }
 

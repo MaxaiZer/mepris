@@ -34,6 +34,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
 
     let params = runner::RunParameters {
         dry_run: args.dry_run,
+        interactive: args.interactive,
     };
     let dry_run_plan = runner::run(
         &filter_result.filtered_steps,
@@ -219,6 +220,7 @@ fn test_filter_tags() -> Result<()> {
         tags: vec![],
         steps: vec![],
         start_step_id: None,
+        interactive: false,
         dry_run: false,
     };
 

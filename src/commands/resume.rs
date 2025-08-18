@@ -22,12 +22,15 @@ pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
         return Ok(());
     }
 
+    let interactive = args.interactive || state.interactive;
+
     run::handle(
         RunArgs {
             file: state.file,
             tags: state.tags,
             steps: state.steps,
             start_step_id: state.last_step_id,
+            interactive,
             dry_run: args.dry_run,
         },
         out,

@@ -6,6 +6,9 @@ use std::{
     thread,
 };
 
+mod interactive;
+mod logger;
+
 use crate::{
     check_script::ScriptChecker,
     config::{PackageManager, Script, Shell, Step},
@@ -14,14 +17,20 @@ use crate::{
 };
 
 use anyhow::{Context, Result, bail};
+use colored::Colorize;
+use interactive::ask_confirmation;
+use logger::Logger;
 use which::which;
 
+#[derive(Default)]
 pub struct RunParameters {
+    pub interactive: bool,
     pub dry_run: bool,
 }
 
 pub struct RunState {
     pub last_step_id: Option<String>,
+    pub interactive: bool,
 }
 
 pub trait StateSaver {
@@ -46,26 +55,6 @@ pub struct DryRunPlan {
     pub steps_ignored_by_when: Vec<String>,
 }
 
-struct Logger<'a, W: Write> {
-    pub current_step: usize,
-    pub steps_count: usize,
-    pub out: &'a mut W,
-}
-
-impl<'a, W: Write> Logger<'a, W> {
-    fn log(&mut self, str: &str) -> std::io::Result<()> {
-        let width = self.steps_count.to_string().len();
-        let progress = format!(
-            "[{:>width$}/{}]",
-            self.current_step,
-            self.steps_count,
-            width = width
-        );
-
-        writeln!(self.out, "{}", str.replace("PROGRESS", &progress))
-    }
-}
-
 pub fn run(
     steps: &[&Step],
     params: &RunParameters,
@@ -85,6 +74,7 @@ pub fn run(
         steps_count: steps.len(),
         out,
     };
+    let mut interactive = params.interactive;
 
     for (i, step) in steps.iter().enumerate() {
         logger.current_step = i + 1;
@@ -110,10 +100,20 @@ pub fn run(
         if state_saver
             .save(&RunState {
                 last_step_id: Some(step.id.clone()),
+                interactive,
             })
             .is_err()
         {
-            logger.log(" ⚠️Failed to save run state")?;
+            logger.log(&format!("{} Failed to save run state", "Warning:".yellow()))?;
+        }
+
+        if interactive {
+            match ask_confirmation(step, &mut logger)? {
+                interactive::Decision::Run => {}
+                interactive::Decision::Skip => continue,
+                interactive::Decision::Abort => return Ok(None),
+                interactive::Decision::LeaveInteractiveMode => interactive = false,
+            }
         }
 
         logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
@@ -121,8 +121,14 @@ pub fn run(
         logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
     }
 
-    if state_saver.save(&RunState { last_step_id: None }).is_err() {
-        writeln!(out, " ⚠️Failed to save run state")?;
+    if state_saver
+        .save(&RunState {
+            last_step_id: None,
+            interactive,
+        })
+        .is_err()
+    {
+        logger.log(&format!("{} Failed to save run state", "Warning:".yellow()))?;
     }
 
     writeln!(out, "✅ Run completed")?;
@@ -443,7 +449,9 @@ mod tests {
 
         let _ = run(
             &steps.iter().collect::<Vec<&Step>>(),
-            &RunParameters { dry_run: false },
+            &RunParameters {
+                ..Default::default()
+            },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut io::stdout(),
@@ -467,7 +475,10 @@ mod tests {
 
         let plan = run(
             &steps.iter().collect::<Vec<&Step>>(),
-            &RunParameters { dry_run: true },
+            &RunParameters {
+                dry_run: true,
+                ..Default::default()
+            },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut output,
@@ -505,7 +516,10 @@ mod tests {
 
         let plan = run(
             &steps.iter().collect::<Vec<&Step>>(),
-            &RunParameters { dry_run: true },
+            &RunParameters {
+                dry_run: true,
+                ..Default::default()
+            },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut output,
@@ -541,7 +555,10 @@ mod tests {
 
         let plan = run(
             &steps.iter().collect::<Vec<&Step>>(),
-            &RunParameters { dry_run: true },
+            &RunParameters {
+                dry_run: true,
+                ..Default::default()
+            },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut output,

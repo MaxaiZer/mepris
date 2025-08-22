@@ -11,52 +11,58 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    #[command(about = "Execute steps from config", long_about = None)]
+    #[command(about = "Execute steps from configuration file", long_about = None)]
     Run(RunArgs),
     #[command(about = "Resume failed run", long_about = None)]
     Resume(ResumeArgs),
-    #[command(about = "List tags with corresponding steps", long_about = None)]
+    #[command(about = "List tags with their corresponding steps", long_about = None)]
     ListTags(ListTagsArgs),
 }
 
 #[derive(Args)]
 pub struct RunArgs {
-    #[arg(short, long, required = true)]
+    #[arg(short, long, required = true, help = "Path to configuration YAML file")]
     pub file: String,
-    #[arg(long = "tag")]
+    #[arg(short, long = "tag", help = "Filter steps by tags")]
     pub tags: Vec<String>,
-    #[arg(long = "step")]
+    #[arg(short, long = "step", help = "Run only specific steps by their IDs")]
     pub steps: Vec<String>,
     #[arg(skip)]
     pub start_step_id: Option<String>,
     #[arg(
         short,
         long,
-        help = "Run in interactive mode, asking for confirmation before each step"
+        help = "Enable interactive mode (ask confirmation before each step)"
     )]
     pub interactive: bool,
     #[arg(
+        short,
         long,
-        help = "Do a dry-run without executing scripts or installing packages"
+        help = "Enable dry-run mode (no scripts or packages executed)"
     )]
     pub dry_run: bool,
 }
 
 #[derive(Args)]
 pub struct ResumeArgs {
-    #[arg(long)]
+    #[arg(
+        short,
+        long,
+        help = "Enable interactive mode (ask confirmation before each step)"
+    )]
     pub interactive: bool,
     #[arg(
+        short,
         long,
-        help = "Do a dry-run without executing scripts or installing packages"
+        help = "Enable dry-run mode (no scripts or packages executed)"
     )]
     pub dry_run: bool,
 }
 
 #[derive(Args)]
 pub struct ListTagsArgs {
-    #[arg(short, long, required = true)]
+    #[arg(short, long, required = true, help = "Path to configuration YAML file")]
     pub file: String,
-    #[arg(long = "tag")]
+    #[arg(short, long = "tag", help = "Tags to list")]
     pub tags: Vec<String>,
 }

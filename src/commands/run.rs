@@ -9,6 +9,7 @@ use crate::{
     runner::{self, DryRunPlan},
 };
 use anyhow::{Result, bail};
+use colored::Colorize;
 
 use super::utils::{
     RunStateSaver, check_steps_exist, check_unique_id, filter_by_os, filter_by_tags,
@@ -130,7 +131,8 @@ fn print_info(
             if !manager_info.installed {
                 writeln!(
                     out,
-                    " ⚠️Step '{step_id}' uses package manager that is not currently available. Make sure it's installed in the previous steps",
+                    "{} Step '{step_id}' uses package manager that is not currently available. Make sure it's installed in the previous steps",
+                    "Warning:".yellow(),
                 )?;
             }
         }
@@ -139,7 +141,8 @@ fn print_info(
             let shells = step.missing_shells.join(", ");
             writeln!(
                 out,
-                " ⚠️Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",
+                "{} Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",
+                "Warning:".yellow(),
             )?;
         }
     }

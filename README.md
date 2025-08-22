@@ -139,12 +139,12 @@ steps:
 ## CLI Usage
 
 ```bash
-mepris run -f config.yaml [--tag TAG] [--step STEP] [-i] [--dry-run]  
+mepris run --file config.yaml [--tag TAG] [--step STEP] [--interactive] [--dry-run]  
 # Execute steps from configuration file  
 
-mepris resume [--dry-run]  
+mepris resume [--interactive] [--dry-run]  
 # Resume previously failed run
 
-mepris list-tags -f config.yaml [--tag TAG]  
+mepris list-tags --file config.yaml [--tag TAG]  
 # List tags with corresponding steps from config file  
 ```

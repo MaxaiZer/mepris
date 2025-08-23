@@ -26,6 +26,10 @@ pub fn get<T: DeserializeOwned>() -> Result<T> {
 }
 
 fn get_state_path() -> Result<PathBuf> {
+    if std::env::var("STATE_PATH").is_ok() {
+        let path = std::env::var("STATE_PATH").map(PathBuf::from)?;
+        return Ok(path);
+    }
     let dirs = ProjectDirs::from("", "", "mepris").context("Could not get project dirs")?;
     let data_dir = dirs.data_dir();
     fs::create_dir_all(data_dir).context("Failed to create data directory")?;

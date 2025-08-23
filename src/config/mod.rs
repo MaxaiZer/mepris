@@ -268,6 +268,8 @@ pub struct Step {
     pub tags: Vec<String>,
     #[serde(default, deserialize_with = "parse_os_expr")]
     pub os: Option<OsExpr>,
+    #[serde(default)]
+    pub env: Vec<String>,
     #[serde(rename = "when")]
     pub when_script: Option<Script>,
     pub package_manager: Option<PackageManager>,

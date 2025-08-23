@@ -9,7 +9,7 @@ use crate::{
     runner::{self, RunState},
     state,
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 pub struct RunStateSaver {
     pub file: String,
@@ -36,6 +36,45 @@ pub struct RunInfo {
     pub steps: Vec<String>,
     pub interactive: bool,
     pub last_step_id: Option<String>,
+}
+
+pub fn load_env(config_file_path: &str) -> Result<()> {
+    let env_path = Path::new(config_file_path).parent().unwrap().join(".env");
+    if let Ok(false) = std::fs::exists(&env_path) {
+        return Ok(());
+    }
+    dotenvy::from_filename_override(env_path)
+        .map(|_| Ok(()))
+        .context("Failed to load .env file")?
+}
+
+pub fn check_env(steps: &[&Step]) -> Result<()> {
+    let mut missing: HashMap<String, Vec<String>> = HashMap::new();
+
+    for step in steps {
+        for env in step.env.iter() {
+            if std::env::var(env).is_err() {
+                missing
+                    .entry(env.clone())
+                    .or_default()
+                    .push(step.id.clone());
+            }
+        }
+    }
+
+    if !missing.is_empty() {
+        let mut msg = String::from("Undefined environment variables:");
+        missing.iter().for_each(|(env, steps)| {
+            msg.push_str(&format!(
+                "\n{} (required by steps {})",
+                env,
+                steps.join(", ")
+            ));
+        });
+        bail!(msg);
+    }
+
+    Ok(())
 }
 
 pub fn check_unique_id(steps: &[Step]) -> Result<()> {

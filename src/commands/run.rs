@@ -12,8 +12,8 @@ use anyhow::{Result, bail};
 use colored::Colorize;
 
 use super::utils::{
-    RunStateSaver, check_steps_exist, check_unique_id, filter_by_os, filter_by_tags,
-    filter_steps_start_with_id,
+    RunStateSaver, check_env, check_steps_exist, check_unique_id, filter_by_os, filter_by_tags,
+    filter_steps_start_with_id, load_env,
 };
 
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
@@ -32,6 +32,9 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     check_unique_id(&steps)?;
 
     let filter_result = filter_steps(&steps, &OS_INFO, &args)?;
+
+    load_env(&args.file)?;
+    check_env(&filter_result.filtered_steps)?;
 
     let params = runner::RunParameters {
         dry_run: args.dry_run,

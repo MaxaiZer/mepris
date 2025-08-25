@@ -38,7 +38,9 @@ Each step supports the following optional fields:
   - Examples:
     - `%debian` — only for Debian-based distributions
     - `!windows && !macos` — skip on Windows and macOS
-    - `!%arch || manjaro` — run on non Arch-based distributions or on Manjaro 
+    - `!%arch || manjaro` — run on non Arch-based distributions or on Manjaro
+- `env`: A list of required environment variables.
+Mepris validates that all required variables are set before starting the run (including .env if present).  
 - `pre_script`: A script that runs before installing packages or the main script.
 - `when`: A shell command/script used as a condition check; if it exits with 0, the step will run, otherwise it will be skipped.  
 - `tags`: List of tags to categorize steps.
@@ -72,6 +74,10 @@ All scripts (`when`, `pre_script`, `script`) are executed with their working dir
 - pre_script — run preliminary commands
 - Install packages via the appropriate package manager
 - Run the main script
+
+### .env support
+
+If a .env file exists in the working directory **alongside the main YAML config file**, its variables are automatically loaded (override existing ones).
 
 ## Example Config
 
@@ -113,21 +119,6 @@ steps:
     tags: ["terminal"]
     packages: ["fd"]
 
-  - id: stow
-    os: "!windows"
-    tags: ["terminal", "stow"]
-    packages: ["git", "stow"]
-    when: |
-      [ -d "~/dotfiles" ] && exit 1 || exit 0
-    script: |
-      cd
-      git clone https://github.com/MaxaiZer/dotfiles
-      cd dotfiles
-      stow nvim
-      stow yazi
-      chmod +x zsh/setup.sh
-      ./zsh/setup.sh
-
   - id: nerd-fonts-windows
     os: "windows"
     tags: ["terminal", "fonts"]
@@ -135,11 +126,18 @@ steps:
       shell: pwsh
       run: scoop bucket add nerd-fonts
     packages: ["JetBrainsMono-NF"]
+
+  - id: setup-git
+    tags: ["git"]
+    env: ["GIT_EMAIL", "GIT_NAME"]
+    script: |
+      git config --global user.email "$GIT_EMAIL"
+      git config --global user.name "$GIT_NAME"
 ```
 ## CLI Usage
 
 ```bash
-mepris run --file config.yaml [--tag TAG] [--step STEP] [--interactive] [--dry-run]  
+mepris run --file config.yaml [--tag TAGS_EXPRESSION] [--step STEP] [--interactive] [--dry-run]  
 # Execute steps from configuration file  
 
 mepris resume [--interactive] [--dry-run]  

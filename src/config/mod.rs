@@ -1,11 +1,10 @@
 use std::collections::HashSet;
 
-use pest::{Parser, iterators::Pair};
-use pest_derive::Parser;
-use serde::{Deserialize, Deserializer};
+use expr::Expr;
+use serde::Deserialize;
 use strum_macros::EnumIter;
 
-use crate::os_info::OsInfo;
+pub mod expr;
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Defaults {
@@ -95,119 +94,6 @@ impl PackageManager {
     }
 }
 
-#[derive(Parser)]
-#[grammar = "config/os_expr.pest"]
-pub struct OsExprParser;
-
-#[derive(Debug, Clone)]
-pub enum OsExpr {
-    Var(String),
-    Not(Box<OsExpr>),
-    And(Box<OsExpr>, Box<OsExpr>),
-    Or(Box<OsExpr>, Box<OsExpr>),
-}
-
-impl OsExpr {}
-
-fn parse_term(term: &str) -> OsCond {
-    let norm = term.to_ascii_lowercase();
-    if let Some(rest) = norm.strip_prefix('%') {
-        OsCond::IdLike(rest.to_string())
-    } else {
-        OsCond::Os(norm.to_string())
-    }
-}
-
-pub fn parse_os_expr<'de, D>(deserializer: D) -> Result<Option<OsExpr>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: Option<&str> = Option::deserialize(deserializer)?;
-    match s {
-        Some(inner) => {
-            let parsed = parse(inner).map_err(serde::de::Error::custom)?;
-            Ok(Some(parsed))
-        }
-        None => Ok(None),
-    }
-}
-
-pub fn parse(input: &str) -> Result<OsExpr, String> {
-    let mut pairs =
-        OsExprParser::parse(Rule::expr, input).map_err(|e| format!("Parse error: {e}"))?;
-
-    build_expr(pairs.next().unwrap())
-}
-
-pub fn eval_expr(expr: &OsExpr, os_info: &OsInfo) -> bool {
-    match expr {
-        OsExpr::Var(s) => match parse_term(s) {
-            OsCond::Os(id) => id == os_info.platform.as_str() || Some(id) == os_info.id,
-            OsCond::IdLike(id) => os_info.id_like.contains(&id),
-        },
-        OsExpr::Not(e) => !eval_expr(e, os_info),
-        OsExpr::And(a, b) => eval_expr(a, os_info) && eval_expr(b, os_info),
-        OsExpr::Or(a, b) => eval_expr(a, os_info) || eval_expr(b, os_info),
-    }
-}
-
-fn build_expr(pair: Pair<Rule>) -> Result<OsExpr, String> {
-    match pair.as_rule() {
-        Rule::expr => build_expr(pair.into_inner().next().unwrap()),
-
-        Rule::or_expr => {
-            let mut inner = pair.into_inner();
-            let first = build_expr(inner.next().unwrap())?;
-            inner.try_fold(first, |left, right_pair| {
-                let right = build_expr(right_pair)?;
-                Ok(OsExpr::Or(Box::new(left), Box::new(right)))
-            })
-        }
-
-        Rule::and_expr => {
-            let mut inner = pair.into_inner();
-            let first = build_expr(inner.next().unwrap())?;
-            inner.try_fold(first, |left, right_pair| {
-                let right = build_expr(right_pair)?;
-                Ok(OsExpr::And(Box::new(left), Box::new(right)))
-            })
-        }
-
-        Rule::not_expr => {
-            let inner = pair.into_inner();
-            let mut not_count = 0;
-            let mut last = None;
-
-            for p in inner {
-                if p.as_rule() == Rule::atom {
-                    last = Some(build_expr(p)?);
-                    break;
-                }
-                not_count += 1;
-            }
-
-            let mut expr = last.ok_or("Missing atom after !")?;
-            for _ in 0..not_count {
-                expr = OsExpr::Not(Box::new(expr));
-            }
-
-            Ok(expr)
-        }
-
-        Rule::atom => build_expr(pair.into_inner().next().unwrap()),
-
-        Rule::ident | Rule::idlike | Rule::os => Ok(OsExpr::Var(pair.as_str().to_string())),
-
-        _ => Err(format!("Unexpected rule: {:?}", pair.as_rule())),
-    }
-}
-
-#[derive(Debug)]
-pub enum OsCond {
-    Os(String),
-    IdLike(String),
-}
-
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash, EnumIter)]
 #[serde(rename_all = "lowercase")]
 #[derive(Default)]
@@ -266,8 +152,8 @@ pub struct Step {
     pub id: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default, deserialize_with = "parse_os_expr")]
-    pub os: Option<OsExpr>,
+    #[serde(default, deserialize_with = "expr::parse_os_expr")]
+    pub os: Option<Expr>,
     #[serde(default)]
     pub env: Vec<String>,
     #[serde(rename = "when")]
@@ -302,32 +188,4 @@ pub struct Config {
     pub includes: Option<Vec<String>>,
     pub defaults: Option<Defaults>,
     pub steps: Option<Vec<Step>>,
-}
-
-#[test]
-fn test_os_expr() {
-    let inputs = vec![
-        ("ubuntu", true),
-        ("Ubuntu", true),
-        ("debian", false),
-        ("%debian", true),
-        ("!%debian", false),
-        ("!windows", true),
-        ("windows", false),
-        ("ubuntu || debian", true),
-        ("!ubuntu || debian", false),
-        ("!(arch || fedora)", true),
-        ("linux && !arch && !fedora", true),
-        ("linux && !arch && !fedora && !ubuntu", false),
-    ];
-    let os_info = OsInfo {
-        platform: crate::os_info::Platform::Linux,
-        id: Some("ubuntu".to_string()),
-        id_like: vec!["debian".to_string()],
-    };
-
-    for (str, expected) in &inputs {
-        let parsed = parse(str).unwrap();
-        assert_eq!(eval_expr(&parsed, &os_info), expected.clone());
-    }
 }

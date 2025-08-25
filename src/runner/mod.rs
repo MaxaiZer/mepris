@@ -454,7 +454,7 @@ mod tests {
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
-            &mut io::stdout(),
+            &mut io::sink(),
         )?;
         Ok(())
     }
@@ -585,23 +585,13 @@ mod tests {
             code: "echo \"what\"".to_string(),
         };
 
-        run_script(
-            &script,
-            Path::new("/"),
-            &mut mock_checker,
-            &mut io::stdout(),
-        )?;
+        run_script(&script, Path::new("/"), &mut mock_checker, &mut io::sink())?;
 
         assert_eq!(mock_checker.check_value_calls, 0);
 
         mock_checker.check_value_calls = 0;
         mock_checker.is_checked_value = false;
-        run_script(
-            &script,
-            Path::new("/"),
-            &mut mock_checker,
-            &mut io::stdout(),
-        )?;
+        run_script(&script, Path::new("/"), &mut mock_checker, &mut io::sink())?;
 
         assert_eq!(mock_checker.check_value_calls, 1);
         Ok(())

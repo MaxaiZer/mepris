@@ -23,8 +23,12 @@ pub enum Commands {
 pub struct RunArgs {
     #[arg(short, long, required = true, help = "Path to configuration YAML file")]
     pub file: String,
-    #[arg(short, long = "tag", help = "Filter steps by tags")]
-    pub tags: Vec<String>,
+    #[arg(
+        short,
+        long = "tag",
+        help = "Filter steps by tags expression, e.g. !(tag1 || tag2) && tag3"
+    )]
+    pub tags_expr: Option<String>,
     #[arg(short, long = "step", help = "Run only specific steps by their IDs")]
     pub steps: Vec<String>,
     #[arg(skip)]
@@ -65,4 +69,10 @@ pub struct ListTagsArgs {
     pub file: String,
     #[arg(short, long = "tag", help = "Tags to list")]
     pub tags: Vec<String>,
+    #[arg(
+        short,
+        long,
+        help = "Include all tags and their steps regardless of OS"
+    )]
+    pub all: bool,
 }

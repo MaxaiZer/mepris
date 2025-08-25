@@ -5,7 +5,7 @@ use crate::{
     cli::RunArgs,
     config::Step,
     os_info::{OS_INFO, OsInfo},
-    parser,
+    parser::{self},
     runner::{self, DryRunPlan},
 };
 use anyhow::{Result, bail};
@@ -19,7 +19,7 @@ use super::utils::{
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     let state_saver = RunStateSaver {
         file: args.file.clone(),
-        tags: args.tags.clone(),
+        tags_expr: args.tags_expr.clone(),
         steps: args.steps.clone(),
     };
     let mut script_checker = DefaultScriptChecker::new();
@@ -86,8 +86,8 @@ fn filter_steps<'a>(
         res.filtered_steps.retain(|s| args.steps.contains(&s.id));
     }
 
-    if !args.tags.is_empty() {
-        let filter_by_tags = filter_by_tags(&res.filtered_steps, &args.tags)?;
+    if args.tags_expr.is_some() {
+        let filter_by_tags = filter_by_tags(&res.filtered_steps, args.tags_expr.as_ref().unwrap())?;
         res.excluded_by_tags = filter_by_tags.not_matching;
         res.filtered_steps = filter_by_tags.matching;
     }
@@ -186,30 +186,31 @@ fn print_info(
 }
 
 #[test]
-fn test_filter_tags() -> Result<()> {
+fn test_filter() -> Result<()> {
+    use crate::config::expr::parse;
     use anyhow::Ok;
 
     let steps = vec![
         Step {
             id: "id1".to_string(),
-            os: Some(crate::config::parse("!linux").unwrap()),
+            os: Some(parse("!linux").unwrap()),
             ..Default::default()
         },
         Step {
             id: "id2".to_string(),
-            os: Some(crate::config::parse("linux").unwrap()),
+            os: Some(parse("linux").unwrap()),
             tags: vec!["tag1".to_string()],
             ..Default::default()
         },
         Step {
             id: "id3".to_string(),
-            os: Some(crate::config::parse("linux").unwrap()),
+            os: Some(parse("linux").unwrap()),
             tags: vec!["tag1".to_string(), "tag2".to_string()],
             ..Default::default()
         },
         Step {
             id: "id4".to_string(),
-            os: Some(crate::config::parse("!linux").unwrap()),
+            os: Some(parse("!linux").unwrap()),
             tags: vec!["tag3".to_string()],
             ..Default::default()
         },
@@ -223,7 +224,7 @@ fn test_filter_tags() -> Result<()> {
 
     let mut args = RunArgs {
         file: "file".to_string(),
-        tags: vec![],
+        tags_expr: None,
         steps: vec![],
         start_step_id: None,
         interactive: false,
@@ -231,27 +232,105 @@ fn test_filter_tags() -> Result<()> {
     };
 
     let mut res = filter_steps(&steps, &os_info, &args).unwrap();
-    assert_eq!(res.filtered_steps.len(), 2);
-    assert_eq!(res.excluded_by_tags.len(), 0);
-    assert_eq!(res.excluded_by_os.len(), 2);
-    assert_eq!(res.skipped.len(), 0);
+    assert_eq!(res.filtered_steps.len(), 2, "testing filter only by os");
+    assert_eq!(res.excluded_by_tags.len(), 0, "testing filter only by os");
+    assert_eq!(res.excluded_by_os.len(), 2, "testing filter only by os");
+    assert_eq!(res.skipped.len(), 0, "testing filter only by os");
 
-    args.tags = vec!["tag1".to_string()];
+    args.tags_expr = Some("tag1".to_string());
     res = filter_steps(&steps, &os_info, &args).unwrap();
-    assert_eq!(res.filtered_steps.len(), 2);
-    assert_eq!(res.excluded_by_tags.len(), 2);
+    assert_eq!(res.filtered_steps.len(), 2, "testing filter by single tag");
+    assert_eq!(
+        res.excluded_by_tags.len(),
+        2,
+        "testing filter by single tag"
+    );
 
-    args.steps = vec!["id2".to_string()];
+    args.tags_expr = Some("tag1 && tag2".to_string());
     res = filter_steps(&steps, &os_info, &args).unwrap();
-    assert_eq!(res.filtered_steps.len(), 1);
-    assert_eq!(res.excluded_by_tags.len(), 0);
+    assert_eq!(
+        res.filtered_steps.len(),
+        1,
+        "testing filter by tag1 AND tag2"
+    );
+    assert_eq!(
+        res.excluded_by_tags.len(),
+        3,
+        "testing filter by tag1 AND tag2"
+    );
 
+    args.steps = vec!["id3".to_string()];
+    res = filter_steps(&steps, &os_info, &args).unwrap();
+    assert_eq!(res.filtered_steps.len(), 1, "testing filter by step id");
+    assert_eq!(res.excluded_by_tags.len(), 0, "testing filter by step id");
+
+    args.tags_expr = Some("tag1".to_string());
     args.steps = vec![];
     args.start_step_id = Some("id3".to_string());
     res = filter_steps(&steps, &os_info, &args).unwrap();
-    assert_eq!(res.filtered_steps.len(), 1);
-    assert_eq!(res.excluded_by_tags.len(), 2);
-    assert_eq!(res.skipped.len(), 1);
+    assert_eq!(
+        res.filtered_steps.len(),
+        1,
+        "testing filter by start step id"
+    );
+    assert_eq!(
+        res.excluded_by_tags.len(),
+        2,
+        "testing filter by start step id"
+    );
+    assert_eq!(res.skipped.len(), 1, "testing filter by start step id");
+
+    Ok(())
+}
+
+#[test]
+fn test_unknown_tags() -> Result<()> {
+    use anyhow::Ok;
+
+    let steps = vec![
+        Step {
+            id: "id1".to_string(),
+            ..Default::default()
+        },
+        Step {
+            id: "id2".to_string(),
+            tags: vec!["tag1".to_string()],
+            ..Default::default()
+        },
+        Step {
+            id: "id3".to_string(),
+            tags: vec!["tag1".to_string(), "tag2".to_string()],
+            ..Default::default()
+        },
+        Step {
+            id: "id4".to_string(),
+            tags: vec!["tag3".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let os_info = OsInfo {
+        platform: crate::os_info::Platform::Linux,
+        id: None,
+        id_like: vec![],
+    };
+
+    let mut args = RunArgs {
+        file: "file".to_string(),
+        tags_expr: Some("tag4".to_string()),
+        steps: vec![],
+        start_step_id: None,
+        interactive: false,
+        dry_run: false,
+    };
+
+    assert!(filter_steps(&steps, &os_info, &args).is_err());
+
+    args.tags_expr = Some("tag1 || tag4".to_string());
+    assert!(filter_steps(&steps, &os_info, &args).is_err());
+
+    args.tags_expr = Some("!tag4".to_string());
+    assert!(filter_steps(&steps, &os_info, &args).is_err());
 
     Ok(())
 }

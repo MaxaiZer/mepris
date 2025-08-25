@@ -4,7 +4,10 @@ use std::{
 };
 
 use crate::{
-    config::{Step, eval_expr},
+    config::{
+        Step,
+        expr::{eval_os_expr, eval_tags_expr, parse},
+    },
     os_info::OsInfo,
     runner::{self, RunState},
     state,
@@ -13,7 +16,7 @@ use anyhow::{Context, Result, bail};
 
 pub struct RunStateSaver {
     pub file: String,
-    pub tags: Vec<String>,
+    pub tags_expr: Option<String>,
     pub steps: Vec<String>,
 }
 
@@ -21,7 +24,7 @@ impl runner::StateSaver for RunStateSaver {
     fn save(&self, state: &RunState) -> anyhow::Result<()> {
         state::save(&RunInfo {
             file: self.file.clone(),
-            tags: self.tags.clone(),
+            tags_expr: self.tags_expr.clone(),
             steps: self.steps.clone(),
             interactive: state.interactive,
             last_step_id: state.last_step_id.clone(),
@@ -32,7 +35,7 @@ impl runner::StateSaver for RunStateSaver {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct RunInfo {
     pub file: String,
-    pub tags: Vec<String>,
+    pub tags_expr: Option<String>,
     pub steps: Vec<String>,
     pub interactive: bool,
     pub last_step_id: Option<String>,
@@ -126,12 +129,12 @@ pub struct FilterResult<'a> {
     pub not_matching: Vec<&'a Step>,
 }
 
-pub fn filter_by_tags<'a>(steps: &[&'a Step], tags: &[String]) -> Result<FilterResult<'a>> {
-    check_tags_exist(steps, tags)?;
+pub fn filter_by_tags<'a>(steps: &[&'a Step], tags_expr: &str) -> Result<FilterResult<'a>> {
+    let expr = parse(tags_expr)?;
+    check_tags_exist(steps, &expr.vars().into_iter().collect::<Vec<_>>())?;
 
-    let (matching, not_matching): (Vec<_>, Vec<_>) = steps
-        .iter()
-        .partition(|s| s.tags.iter().any(|tag| tags.contains(tag)));
+    let (matching, not_matching): (Vec<_>, Vec<_>) =
+        steps.iter().partition(|s| eval_tags_expr(&expr, &s.tags));
     Ok(FilterResult {
         matching,
         not_matching,
@@ -160,7 +163,7 @@ pub fn filter_by_os<'a>(steps: &[&'a Step], os_info: &OsInfo) -> Result<FilterRe
             return true;
         }
         if let Some(os_expr) = &s.os
-            && eval_expr(os_expr, os_info)
+            && eval_os_expr(os_expr, os_info)
         {
             return true;
         }

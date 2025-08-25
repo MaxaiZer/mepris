@@ -29,13 +29,13 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags: vec![],
+            tags_expr: None,
             steps: vec![],
             start_step_id: None,
             interactive: false,
             dry_run: true,
         },
-        &mut io::stdout(),
+        &mut io::sink(),
     );
     assert!(res.is_err_and(|e| {
         let str = e.to_string();
@@ -72,13 +72,13 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags: vec![],
+            tags_expr: None,
             steps: vec![],
             start_step_id: None,
             interactive: false,
             dry_run: true,
         },
-        &mut io::stdout(),
+        &mut io::sink(),
     );
     assert!(res.is_ok());
 }
@@ -113,13 +113,13 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags: vec![],
+            tags_expr: None,
             steps: vec![],
             start_step_id: None,
             interactive: false,
             dry_run: true,
         },
-        &mut io::stdout(),
+        &mut io::sink(),
     );
     assert!(res.is_ok());
 }
@@ -153,7 +153,7 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags: vec![],
+            tags_expr: None,
             steps: vec![],
             start_step_id: None,
             interactive: false,
@@ -189,7 +189,7 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags: vec![],
+            tags_expr: None,
             steps: vec![],
             start_step_id: None,
             interactive: false,

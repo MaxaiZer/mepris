@@ -27,7 +27,7 @@ pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
     run::handle(
         RunArgs {
             file: state.file,
-            tags: state.tags,
+            tags_expr: state.tags_expr,
             steps: state.steps,
             start_step_id: state.last_step_id,
             interactive,

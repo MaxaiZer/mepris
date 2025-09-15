@@ -15,8 +15,8 @@ pub enum Commands {
     Run(RunArgs),
     #[command(about = "Resume failed run", long_about = None)]
     Resume(ResumeArgs),
-    #[command(about = "List tags with their corresponding steps", long_about = None)]
-    ListTags(ListTagsArgs),
+    #[command(about = "List steps", long_about = None)]
+    ListSteps(ListStepsArgs),
 }
 
 #[derive(Args)]
@@ -64,15 +64,19 @@ pub struct ResumeArgs {
 }
 
 #[derive(Args)]
-pub struct ListTagsArgs {
+pub struct ListStepsArgs {
     #[arg(short, long, required = true, help = "Path to configuration YAML file")]
     pub file: String,
-    #[arg(short, long = "tag", help = "Tags to list")]
-    pub tags: Vec<String>,
+    #[arg(
+        short,
+        long = "tag",
+        help = "Filter steps by tags expression, e.g. !(tag1 || tag2) && tag3"
+    )]
+    pub tags_expr: Option<String>,
     #[arg(
         short,
         long,
-        help = "Include all tags and their steps regardless of OS"
+        help = "Include all steps regardless of whether they match the current OS"
     )]
     pub all: bool,
 }

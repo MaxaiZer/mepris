@@ -143,6 +143,6 @@ mepris run --file config.yaml [--tag TAGS_EXPRESSION] [--step STEP] [--interacti
 mepris resume [--interactive] [--dry-run]  
 # Resume previously failed run
 
-mepris list-tags --file config.yaml [--tag TAG]  
-# List tags with corresponding steps from config file  
+mepris list-steps --file config.yaml [--tag TAG_EXPRESSION]  
+# List steps from config file  
 ```

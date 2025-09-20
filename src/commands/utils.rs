@@ -109,24 +109,36 @@ pub fn check_unique_id(steps: &[Step]) -> Result<()> {
     Ok(())
 }
 
-pub fn check_steps_exist(steps: &[&Step], steps_id_to_check: &[String]) -> Result<()> {
-    let available_ids: HashSet<_> = steps.iter().map(|s| &s.id).collect();
+pub struct FilterResult<'a> {
+    pub matching: Vec<&'a Step>,
+    pub not_matching: Vec<&'a Step>,
+}
 
-    let unknown_steps: Vec<_> = steps_id_to_check
+pub fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> Result<FilterResult<'a>> {
+    let map: std::collections::HashMap<&str, &Step> =
+        steps.iter().copied().map(|s| (s.id.as_str(), s)).collect();
+
+    let unknown_steps: Vec<_> = ids
         .iter()
-        .filter(|id| !available_ids.contains(id))
+        .filter(|id| !map.contains_key(id.as_str()))
         .map(|id| id.as_str())
         .collect();
 
     if !unknown_steps.is_empty() {
         anyhow::bail!("Unknown steps: {}", unknown_steps.join(", "));
     }
-    Ok(())
-}
 
-pub struct FilterResult<'a> {
-    pub matching: Vec<&'a Step>,
-    pub not_matching: Vec<&'a Step>,
+    Ok(FilterResult {
+        matching: ids
+            .iter()
+            .map(|id| *map.get(id.as_str()).unwrap())
+            .collect(),
+        not_matching: map
+            .values()
+            .copied()
+            .filter(|s| !ids.contains(&s.id))
+            .collect(),
+    })
 }
 
 pub fn filter_by_tags<'a>(steps: &[&'a Step], tags_expr: &str) -> Result<FilterResult<'a>> {

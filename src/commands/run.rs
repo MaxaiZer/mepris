@@ -3,6 +3,7 @@ use std::io::Write;
 use crate::{
     check_script::DefaultScriptChecker,
     cli::RunArgs,
+    commands::utils::filter_by_ids,
     config::Step,
     os_info::{OS_INFO, OsInfo},
     parser::{self},
@@ -12,7 +13,7 @@ use anyhow::{Result, bail};
 use colored::Colorize;
 
 use super::utils::{
-    RunStateSaver, check_env, check_steps_exist, check_unique_id, filter_by_os, filter_by_tags,
+    RunStateSaver, check_env, check_unique_id, filter_by_os, filter_by_tags,
     filter_steps_start_with_id, load_env,
 };
 
@@ -82,8 +83,8 @@ fn filter_steps<'a>(
     };
 
     if !args.steps.is_empty() {
-        check_steps_exist(&res.filtered_steps, &args.steps)?;
-        res.filtered_steps.retain(|s| args.steps.contains(&s.id));
+        let filter_by_ids = filter_by_ids(&res.filtered_steps, &args.steps)?;
+        res.filtered_steps = filter_by_ids.matching;
     }
 
     if args.tags_expr.is_some() {

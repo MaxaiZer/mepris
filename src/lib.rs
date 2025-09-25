@@ -7,6 +7,7 @@ mod check_script;
 pub mod cli;
 pub mod commands;
 mod config;
+mod helpers;
 mod os_info;
 mod parser;
 mod runner;

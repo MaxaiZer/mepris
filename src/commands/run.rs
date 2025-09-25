@@ -5,6 +5,7 @@ use crate::{
     cli::RunArgs,
     commands::utils::filter_by_ids,
     config::Step,
+    helpers,
     os_info::{OS_INFO, OsInfo},
     parser::{self},
     runner::{self, DryRunPlan},
@@ -19,7 +20,10 @@ use super::utils::{
 
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     let state_saver = RunStateSaver {
-        file: args.file.clone(),
+        file: helpers::get_absolute_path(&args.file, None)?
+            .to_str()
+            .unwrap()
+            .to_string(),
         tags_expr: args.tags_expr.clone(),
         steps: args.steps.clone(),
     };

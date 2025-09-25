@@ -1,10 +1,9 @@
-use std::{
-    collections::HashSet,
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashSet, fs, path::Path};
 
-use crate::config::{Config, Defaults, Step};
+use crate::{
+    config::{Config, Defaults, Step},
+    helpers,
+};
 use anyhow::{Context, Result};
 
 pub fn parse(file: &str) -> Result<Vec<Step>> {
@@ -18,7 +17,7 @@ fn parse_recursive(
     base_dir: Option<&Path>,
     inherited_defaults: Option<Defaults>,
 ) -> Result<Vec<Step>> {
-    let abs_path = get_absolute_path(file, base_dir)
+    let abs_path = helpers::get_absolute_path(file, base_dir)
         .with_context(|| format!("Failed to resolve absolute path for '{file}'"))?;
     let abs_path_str = abs_path
         .to_str()
@@ -68,26 +67,6 @@ fn parse_recursive(
     }
 
     Ok(steps)
-}
-
-fn get_absolute_path(file: &str, base_dir: Option<&Path>) -> Result<PathBuf> {
-    let path = Path::new(file);
-
-    if path.is_absolute() {
-        return Ok(path.to_path_buf());
-    }
-
-    let cwd;
-    let base = match base_dir {
-        Some(p) => p,
-        None => {
-            cwd = std::env::current_dir().context("Failed to get current working directory")?;
-            cwd.as_path()
-        }
-    };
-    base.join(path)
-        .canonicalize()
-        .with_context(|| format!("Failed to canonicalize file path '{file}'"))
 }
 
 #[cfg(test)]

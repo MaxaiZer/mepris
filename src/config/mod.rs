@@ -84,7 +84,11 @@ impl PackageManager {
 
             Self::Apt => vec![build("sudo", &["apt-get", "install", "-y"], pkgs)],
             Self::Dnf => vec![build("sudo", &["dnf", "install", "-y"], pkgs)],
-            Self::Pacman => vec![build("sudo", &["pacman", "-S", "--noconfirm"], pkgs)],
+            Self::Pacman => vec![build(
+                "sudo",
+                &["pacman", "-S", "--noconfirm", "--needed"],
+                pkgs,
+            )],
             Self::Zypper => vec![build("sudo", &["zypper", "install", "-y"], pkgs)],
             Self::Yay => vec![build("yay", &["-S", "--noconfirm"], pkgs)],
             Self::Brew => vec![build("brew", &["install"], pkgs)],

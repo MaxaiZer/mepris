@@ -58,10 +58,9 @@ where
 {
     let s: Option<&str> = Option::deserialize(deserializer)?;
     match s {
-        Some(inner) => {
-            let parsed = parse(inner).map_err(serde::de::Error::custom)?;
-            Ok(Some(parsed))
-        }
+        Some(inner) => parse(inner).map(Some).map_err(|e| {
+            serde::de::Error::custom(format!("Failed to parse OS expr '{inner}': {e}"))
+        }),
         None => Ok(None),
     }
 }

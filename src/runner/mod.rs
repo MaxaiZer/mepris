@@ -346,8 +346,16 @@ pub fn default_package_manager(platform: Platform) -> Result<PackageManager> {
 }
 
 pub fn step_package_manager(default_manager: &PackageManager, step: &Step) -> PackageManager {
-    if let Some(manager) = &step.package_manager {
-        return manager.clone();
+    if let Some(source) = &step.package_source {
+        if let Some(manager) = source
+            .get_package_managers()
+            .iter()
+            .find(|m| which(m.command()).is_ok())
+        {
+            return manager.clone();
+        } else {
+            return source.get_package_managers()[0].clone();
+        }
     }
 
     if let Some(win_pm) = step
@@ -395,7 +403,9 @@ fn install_packages(
 
 #[cfg(test)]
 mod tests {
-    use crate::{check_script::DefaultScriptChecker, shell::mock_available_shells};
+    use crate::{
+        check_script::DefaultScriptChecker, config::PackageSource, shell::mock_available_shells,
+    };
 
     use super::*;
     use std::{collections::HashSet, fs, io};
@@ -510,7 +520,7 @@ mod tests {
         let steps = vec![Step {
             id: "step".to_string(),
             packages: vec!["git".to_string()],
-            package_manager: Some(PackageManager::Choco),
+            package_source: Some(PackageSource::Manager(PackageManager::Choco)),
             ..Default::default()
         }];
 

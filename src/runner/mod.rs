@@ -1,6 +1,6 @@
 use std::{
-    io::{self, BufRead, BufReader, Write},
     path::Path,
+    io::{self, BufRead, BufReader, Read, Write},
     process::{Command, Stdio},
     sync::mpsc,
     thread,
@@ -265,53 +265,74 @@ fn run_script(
     }
 
     let (cmd, args) = match script.shell {
-        Shell::Bash => (Shell::Bash.get_command(), vec![]),
+        Shell::Bash => (Shell::Bash.get_command(), vec!["-c", &script.code]),
         Shell::PowerShellCore => (
             Shell::PowerShellCore.get_command(),
-            vec!["-NoProfile", "-Command", "-"],
+            vec!["-NoProfile", "-Command", &script.code],
         ),
     };
 
     let mut child = Command::new(cmd)
         .args(args)
-        .stdin(Stdio::piped())
+        .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .current_dir(dir)
         .spawn()?;
 
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(script.code.as_bytes())?;
-    drop(child.stdin.take());
+    let mut stdout = child.stdout.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
 
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
 
-    let (tx, rx) = mpsc::channel();
+    // read by bytes, not lines, because some programs wait for output on the same line ("Enter
+    // password: <input here>") or display progress bars
+    {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match stdout.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let _ = tx.send(buf[..n].to_vec());
+                    }
+                    Err(err) => {
+                        eprintln!("error reading child stdout: {err}");
+                        break;
+                    }
+                }
+            }
+        });
+    }
 
-    let tx1 = tx.clone();
-    thread::spawn(move || {
-        for line in BufReader::new(stdout).lines() {
-            let line = line.unwrap();
-            tx1.send(line).unwrap();
-        }
-    });
-
-    let tx2 = tx.clone();
-    thread::spawn(move || {
-        for line in BufReader::new(stderr).lines() {
-            let line = line.unwrap();
-            tx2.send(line).unwrap();
-        }
-    });
+    {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match stderr.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let _ = tx.send(buf[..n].to_vec());
+                    }
+                    Err(err) => {
+                        eprintln!("error reading child stderr: {err}");
+                        break;
+                    }
+                }
+            }
+        });
+    }
 
     drop(tx);
-    for line in rx {
-        writeln!(out, "{line}")?;
+
+    for chunk in rx {
+        let s = String::from_utf8_lossy(&chunk);
+        write!(out, "{s}")?;
+        out.flush()?;
     }
+
     let status = child.wait()?;
     if !status.success() {
         match status.code() {

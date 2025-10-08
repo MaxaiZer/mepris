@@ -1,6 +1,7 @@
 use std::{
-    path::Path,
-    io::{self, BufRead, BufReader, Read, Write},
+    fmt,
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc,
     thread,
@@ -11,7 +12,10 @@ mod logger;
 
 use crate::{
     check_script::ScriptChecker,
-    config::{PackageManager, Script, Shell, Step},
+    config::{
+        PackageManager, Script, Shell, Step,
+        alias::{PackageAliases, load_aliases},
+    },
     os_info::{OS_INFO, Platform},
     shell::is_shell_available,
 };
@@ -22,8 +26,8 @@ use interactive::ask_confirmation;
 use logger::Logger;
 use which::which;
 
-#[derive(Default)]
 pub struct RunParameters {
+    pub source_file_path: PathBuf,
     pub interactive: bool,
     pub dry_run: bool,
 }
@@ -42,7 +46,22 @@ pub struct StepDryRun {
     pub id: String,
     pub missing_shells: Vec<String>,
     pub package_manager: Option<PackageManagerInfo>,
-    pub packages_to_install: Vec<String>,
+    pub packages_to_install: Vec<PackageInfo>,
+}
+
+pub struct PackageInfo {
+    pub name: String,
+    pub use_alias: bool,
+}
+
+impl fmt::Display for PackageInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.use_alias {
+            write!(f, "{} (using alias)", self.name)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
 }
 
 pub struct PackageManagerInfo {
@@ -63,21 +82,21 @@ pub fn run(
     out: &mut impl Write,
 ) -> Result<Option<DryRunPlan>> {
     check_scripts(steps, script_checker, true)?;
+    let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
 
     if params.dry_run {
-        return run_dry(steps, script_checker).map(Some);
+        return run_dry(steps, &aliases, script_checker).map(Some);
     }
 
     let default_package_manager = default_package_manager(OS_INFO.platform)?;
-    let mut logger = Logger {
-        current_step: 0,
-        steps_count: steps.len(),
-        out,
-    };
+    let mut logger = Logger::new(steps.len(), out);
     let mut interactive = params.interactive;
 
-    for (i, step) in steps.iter().enumerate() {
+    for (i, step) in steps.iter().cloned().enumerate() {
         logger.current_step = i + 1;
+
+        let mut step = (*step).clone();
+        step.packages = aliases.resolve_names(&step.packages, &default_package_manager);
 
         if let Some(when_script) = &step.when_script {
             match run_script(
@@ -108,7 +127,7 @@ pub fn run(
         }
 
         if interactive {
-            match ask_confirmation(step, &mut logger)? {
+            match ask_confirmation(&step, &mut logger)? {
                 interactive::Decision::Run => {}
                 interactive::Decision::Skip => continue,
                 interactive::Decision::Abort => return Ok(None),
@@ -117,7 +136,7 @@ pub fn run(
         }
 
         logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
-        run_step(step, &default_package_manager, script_checker, &mut logger)?;
+        run_step(&step, &default_package_manager, script_checker, &mut logger)?;
         logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
     }
 
@@ -136,7 +155,11 @@ pub fn run(
     Ok(None)
 }
 
-fn run_dry(steps: &[&Step], script_checker: &mut dyn ScriptChecker) -> Result<DryRunPlan> {
+fn run_dry(
+    steps: &[&Step],
+    aliases: &PackageAliases,
+    script_checker: &mut dyn ScriptChecker,
+) -> Result<DryRunPlan> {
     let mut res = DryRunPlan {
         steps_to_run: vec![],
         steps_ignored_by_when: vec![],
@@ -171,7 +194,18 @@ fn run_dry(steps: &[&Step], script_checker: &mut dyn ScriptChecker) -> Result<Dr
                 name: package_manager.command().to_string(),
                 installed: which(package_manager.command()).is_ok(),
             });
-            step_dry_run.packages_to_install = step.packages.clone();
+
+            step_dry_run.packages_to_install = step
+                .packages
+                .iter()
+                .map(|p| {
+                    let new_name = aliases.resolve_name(p, &package_manager);
+                    PackageInfo {
+                        name: new_name.clone(),
+                        use_alias: *p != new_name,
+                    }
+                })
+                .collect();
         }
 
         let not_available_shells = step
@@ -481,7 +515,9 @@ mod tests {
         let _ = run(
             &steps.iter().collect::<Vec<&Step>>(),
             &RunParameters {
-                ..Default::default()
+                dry_run: false,
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
@@ -508,7 +544,8 @@ mod tests {
             &steps.iter().collect::<Vec<&Step>>(),
             &RunParameters {
                 dry_run: true,
-                ..Default::default()
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
@@ -549,7 +586,8 @@ mod tests {
             &steps.iter().collect::<Vec<&Step>>(),
             &RunParameters {
                 dry_run: true,
-                ..Default::default()
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
@@ -588,7 +626,8 @@ mod tests {
             &steps.iter().collect::<Vec<&Step>>(),
             &RunParameters {
                 dry_run: true,
-                ..Default::default()
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),

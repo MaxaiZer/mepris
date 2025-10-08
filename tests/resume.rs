@@ -69,7 +69,10 @@ steps:
         "mepris run failed: {}",
         res.as_ref().unwrap_err()
     );
-    assert!(output.contains("fixed bracket"));
+    assert!(
+        output.contains("fixed bracket"),
+        "output doesn't contain 'fixed bracket': {output}"
+    );
 
     unsafe { env::remove_var("STATE_PATH") };
 }

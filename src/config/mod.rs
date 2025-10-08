@@ -8,6 +8,7 @@ use serde::{
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
+pub mod alias;
 pub mod expr;
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
@@ -21,37 +22,10 @@ pub struct CommandSpec {
     pub args: Vec<String>,
 }
 
-impl<'de> Deserialize<'de> for PackageSource {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s: String = String::deserialize(deserializer)?;
-        let s_lower = s.to_lowercase();
-
-        if let Ok(repo) = Repository::deserialize::<StringDeserializer<D::Error>>(
-            s_lower.clone().into_deserializer(),
-        ) {
-            return Ok(PackageSource::Repository(repo));
-        }
-
-        if let Ok(pm) = PackageManager::deserialize::<StringDeserializer<D::Error>>(
-            s_lower.clone().into_deserializer(),
-        ) {
-            return Ok(PackageSource::Manager(pm));
-        }
-
-        let mut expected: Vec<String> = PackageManager::iter()
-            .map(|pm| pm.to_string().to_lowercase())
-            .collect();
-        expected.extend(Repository::iter().map(|repo| repo.to_string().to_lowercase()));
-
-        Err(de::Error::custom(format!(
-            "unknown package_source '{}', expected one of [{}]",
-            s_lower,
-            expected.join(", ")
-        )))
-    }
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+pub enum PackageSource {
+    Repository(Repository),
+    Manager(PackageManager),
 }
 
 impl PackageSource {
@@ -65,19 +39,63 @@ impl PackageSource {
     }
 }
 
-#[derive(Debug)]
-pub enum PackageSource {
-    Repository(Repository),
-    Manager(PackageManager),
+impl<'de> Deserialize<'de> for PackageSource {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = String::deserialize(deserializer)?;
+        let s_lower = s.to_lowercase();
+
+        let parse_err = || {
+            let mut expected: Vec<String> = PackageManager::iter()
+                .filter(|pm| !Repository::Aur.get_package_managers().contains(pm))
+                .map(|pm| pm.to_string().to_lowercase())
+                .collect();
+            expected.extend(Repository::iter().map(|repo| repo.to_string().to_lowercase()));
+            de::Error::custom(format!(
+                "unknown package_source '{}', expected one of [{}]",
+                s_lower,
+                expected.join(", ")
+            ))
+        };
+
+        if let Ok(repo) = Repository::deserialize::<StringDeserializer<D::Error>>(
+            s_lower.clone().into_deserializer(),
+        ) {
+            return Ok(PackageSource::Repository(repo));
+        }
+
+        if let Ok(pm) = PackageManager::deserialize::<StringDeserializer<D::Error>>(
+            s_lower.clone().into_deserializer(),
+        ) {
+            if Repository::Aur.get_package_managers().contains(&pm) {
+                return Err(parse_err());
+            }
+            return Ok(PackageSource::Manager(pm));
+        }
+
+        Err(parse_err())
+    }
 }
 
-#[derive(Debug, Deserialize, EnumIter, Display)]
+#[derive(Debug, Deserialize, EnumIter, Display, PartialEq, Eq, Hash, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Repository {
     Aur,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display)]
+impl Repository {
+    pub fn get_package_managers(&self) -> Vec<PackageManager> {
+        match self {
+            Repository::Aur => {
+                vec![PackageManager::Yay, PackageManager::Paru]
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManager {
     Apt,
@@ -180,7 +198,7 @@ impl Shell {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Script {
     pub shell: Shell,
     pub code: String,
@@ -214,7 +232,7 @@ impl<'de> Deserialize<'de> for Script {
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct Step {
     pub id: String,
     #[serde(default)]

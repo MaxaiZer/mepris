@@ -7,6 +7,14 @@ pub struct Logger<'a, W: Write> {
 }
 
 impl<'a, W: Write> Logger<'a, W> {
+    pub fn new(step_count: usize, out: &'a mut W) -> Self {
+        Logger {
+            current_step: 0,
+            steps_count: step_count,
+            out,
+        }
+    }
+
     pub fn log(&mut self, str: &str) -> std::io::Result<()> {
         let width = self.steps_count.to_string().len();
         let progress = format!(

@@ -42,6 +42,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     check_env(&filter_result.filtered_steps)?;
 
     let params = runner::RunParameters {
+        source_file_path: state_saver.file.clone().into(),
         dry_run: args.dry_run,
         interactive: args.interactive,
     };
@@ -129,7 +130,12 @@ fn print_info(
         writeln!(out, "🚀 Would run step '{step_id}'")?;
 
         if !step.packages_to_install.is_empty() {
-            let packages = step.packages_to_install.join(", ");
+            let packages = step
+                .packages_to_install
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<String>>()
+                .join(", ");
             let manager_info = &step.package_manager.as_ref().unwrap();
             writeln!(
                 out,

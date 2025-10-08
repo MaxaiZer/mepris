@@ -44,9 +44,9 @@ Mepris validates that all required variables are set before starting the run (in
 - `pre_script`: A script that runs before installing packages or the main script.
 - `when`: A shell command/script used as a condition check; if it exits with 0, the step will run, otherwise it will be skipped.  
 - `tags`: List of tags to categorize steps.
-- `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `yay`, `paru`, `flatpak`, `zypper`, `brew`, `scoop`, `choco`, `winget`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
+- `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `flatpak`, `zypper`, `brew`, `scoop`, `choco`, `winget`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
 - `packages`: List of packages to install via the system or overridden package manager.  
-**Note**: Package names may differ across operating systems and package managers (e.g., flatpak vs apt). Mepris simply passes the given package names to the specified package manager without any translation or mapping.
+**Note:** If no aliases are defined in `pkg_aliases.yaml`, Mepris passes the package names from `step.packages` directly to the specified package manager, without any automatic translation.
 - `script`: The main shell script to execute.  
 
 ### Scripts
@@ -75,9 +75,51 @@ All scripts (`when`, `pre_script`, `script`) are executed with their working dir
 - Install packages via the appropriate package manager
 - Run the main script
 
-### .env support
+## .env support
 
 If a .env file exists in the working directory **alongside the main YAML config file**, its variables are automatically loaded (override existing ones).
+
+## Package aliases
+
+Different package managers may use different names for the same package.  
+For example, fd is called fd-find in apt, but just fd in pacman.
+
+Instead of cluttering your config with OS checks, define aliases once in a separate file - pkg_aliases.yaml.
+
+**Location**
+
+- **Global:**
+  - `~/.config/mepris/pkg_aliases.yaml` (Linux)
+  - `~/Library/Application Support/mepris/pkg_aliases.yaml` (macOS)
+  - `C:\Users\<User>\AppData\Roaming\mepris\pkg_aliases.yaml`  
+  (shared across all configs)
+- **Local:** next to your main config file (pkg_aliases.yaml)
+
+If both exist, **local aliases override global ones**.
+
+**Example**
+```yaml
+# <package_default_name>:
+#   <package_source>: <overridden_name_for_this_source>
+# See `Step Fields -> package_source` for valid values
+
+fd:
+  apt: fd-find
+  zypper: fd-find
+  dnf: fd-find
+```
+
+Now your config stays clean:
+
+```yaml
+steps:
+  - id: fd
+    packages: ["fd"]
+```
+
+When you run Mepris on Debian, it will automatically resolve it as:
+
+`apt install fd-find`
 
 ## Example Config
 
@@ -108,16 +150,6 @@ steps:
       unzip -q yazi.zip -d yazi-temp
       sudo mv yazi-temp/*/{ya,yazi} /usr/local/bin
       rm -rf yazi-temp yazi.zip
-
-  - id: fd-find
-    os: "!windows && !%arch"
-    tags: ["terminal"]
-    packages: ["fd-find"]
-
-  - id: fd
-    os: "windows || %arch"
-    tags: ["terminal"]
-    packages: ["fd"]
 
   - id: nerd-fonts-windows
     os: "windows"

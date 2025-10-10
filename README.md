@@ -32,13 +32,13 @@ Every step must contain a unique id field.
 Each step supports the following optional fields:  
 - `os`: Filters step execution by operating system.
   - `!` — negation
-  - `%` — "based on" check (matches ID_LIKE field in /etc/os-release on Linux).
-  - A distribution name **without** `%` checks against the ID field in /etc/os-release
+  - `%` — "based on" check (matches both the ID and any entries in ID_LIKE in /etc/os-release on Linux).
+  - A distribution name **without** `%` matches only the ID field in /etc/os-release
   - You can combine expressions with `&&` (AND) and `||` (OR).
   - Examples:
-    - `%debian` — only for Debian-based distributions
+    - `%debian` — runs on Debian and Debian-based distributions
     - `!windows && !macos` — skip on Windows and macOS
-    - `!%arch || manjaro` — run on non Arch-based distributions or on Manjaro
+    - `!%arch || manjaro` — runs on non Arch-based distributions or on Manjaro
 - `env`: A list of required environment variables.
 Mepris validates that all required variables are set before starting the run (including .env if present).  
 - `pre_script`: A script that runs before installing packages or the main script.

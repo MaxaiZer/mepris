@@ -132,7 +132,7 @@ pub fn eval_os_expr(expr: &Expr, os_info: &OsInfo) -> bool {
     match expr {
         Expr::Var(s) => match parse_term(s) {
             OsCond::Os(id) => id == os_info.platform.as_str() || Some(id) == os_info.id,
-            OsCond::IdLike(id) => os_info.id_like.contains(&id),
+            OsCond::IdLike(id) => Some(&id) == os_info.id.as_ref() || os_info.id_like.contains(&id),
         },
         Expr::Not(e) => !eval_os_expr(e, os_info),
         Expr::And(a, b) => eval_os_expr(a, os_info) && eval_os_expr(b, os_info),
@@ -173,7 +173,30 @@ fn test_os_expr() {
 
     for (str, expected) in &inputs {
         let parsed = parse(str).unwrap();
-        dbg!(str, &parsed);
+        assert_eq!(
+            eval_os_expr(&parsed, &os_info),
+            expected.clone(),
+            "testing {str}"
+        );
+    }
+}
+
+#[test]
+fn test_os_expr_empty_idlike() {
+    let inputs = vec![
+        ("arch", true),
+        ("debian", false),
+        ("%arch", true),
+        ("!%arch", false),
+    ];
+    let os_info = OsInfo {
+        platform: crate::os_info::Platform::Linux,
+        id: Some("arch".to_string()),
+        id_like: vec![],
+    };
+
+    for (str, expected) in &inputs {
+        let parsed = parse(str).unwrap();
         assert_eq!(
             eval_os_expr(&parsed, &os_info),
             expected.clone(),

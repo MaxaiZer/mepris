@@ -182,4 +182,7 @@ mepris resume [--interactive] [--dry-run]
 
 mepris list-steps --file config.yaml [--tag TAG_EXPRESSION]  
 # List steps from config file  
+
+cargo run -- completion fish > ~/.config/fish/completions/mepris.fish
+cargo run -- completion powershell > ~/.config/powershell/Modules/Mepris/Mepris.psm1
 ```

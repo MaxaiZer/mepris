@@ -17,6 +17,10 @@ pub enum Commands {
     Resume(ResumeArgs),
     #[command(about = "List steps", long_about = None)]
     ListSteps(ListStepsArgs),
+    #[command(about = "List tags", long_about = None)]
+    ListTags(ListTagsArgs),
+    #[command(about = "Generate shell completion scripts")]
+    Completion(CompletionArgs),
 }
 
 #[derive(Args)]
@@ -73,10 +77,56 @@ pub struct ListStepsArgs {
         help = "Filter steps by tags expression, e.g. !(tag1 || tag2) && tag3"
     )]
     pub tags_expr: Option<String>,
+    #[arg(short, long, help = "PLain output: list of step IDs only, no details")]
+    pub plain: bool,
     #[arg(
         short,
         long,
         help = "Include all steps regardless of whether they match the current OS"
     )]
     pub all: bool,
+}
+
+#[derive(Args)]
+pub struct ListTagsArgs {
+    #[arg(short, long, required = true, help = "Path to configuration YAML file")]
+    pub file: String,
+}
+
+#[derive(Args)]
+pub struct CompletionArgs {
+    #[arg(value_enum)]
+    pub shell: clap_complete::Shell,
+}
+
+#[derive(Parser)]
+pub struct AliasArgs {
+    #[command(subcommand)]
+    pub command: AliasCommands,
+}
+
+#[derive(Subcommand)]
+pub enum AliasCommands {
+    #[command(about = "Initialize aliases file")]
+    Init {
+        #[arg(long, help = "Create global aliases file instead of local")]
+        global: bool,
+        #[arg(
+            short,
+            long,
+            help = "Path to local YAML file to create aliases next to",
+            conflicts_with = "global"
+        )]
+        file: Option<String>,
+    },
+
+    #[command(about = "Add or override alias")]
+    Add {
+        #[arg(long, help = "Universal package ID")]
+        id: String,
+        #[arg(long, help = "Alias name for the manager, e.g. apt:fd-find")]
+        mapping: Vec<String>, // parse like "apt:fd-find", "pacman:fd"
+        #[arg(long, help = "Apply globally")]
+        global: bool,
+    },
 }

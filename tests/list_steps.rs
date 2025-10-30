@@ -28,6 +28,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: None,
+            plain: false,
             all: false,
         },
         &mut output,
@@ -66,6 +67,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: None,
+            plain: false,
             all: true,
         },
         &mut output,
@@ -102,6 +104,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: Some("tag5".to_string()),
+            plain: false,
             all: false,
         },
         &mut output,
@@ -136,6 +139,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: None,
+            plain: false,
             all: false,
         },
         &mut output,
@@ -171,6 +175,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: Some("tag1".to_string()),
+            plain: false,
             all: false,
         },
         &mut output,
@@ -204,6 +209,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: Some("tag1".to_string()),
+            plain: false,
             all: false,
         },
         &mut output,
@@ -246,6 +252,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: None,
+            plain: false,
             all: false,
         },
         &mut output,
@@ -287,6 +294,7 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: None,
+            plain: false,
             all: false,
         },
         &mut output,

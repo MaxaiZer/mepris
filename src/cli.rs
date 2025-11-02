@@ -17,6 +17,10 @@ pub enum Commands {
     Resume(ResumeArgs),
     #[command(about = "List steps", long_about = None)]
     ListSteps(ListStepsArgs),
+    #[command(about = "List tags", long_about = None)]
+    ListTags(ListTagsArgs),
+    #[command(about = "Generate shell completion scripts")]
+    Completion(CompletionArgs),
 }
 
 #[derive(Args)]
@@ -73,10 +77,24 @@ pub struct ListStepsArgs {
         help = "Filter steps by tags expression, e.g. !(tag1 || tag2) && tag3"
     )]
     pub tags_expr: Option<String>,
+    #[arg(short, long, help = "Plain output: list of step IDs only, no details")]
+    pub plain: bool,
     #[arg(
         short,
         long,
         help = "Include all steps regardless of whether they match the current OS"
     )]
     pub all: bool,
+}
+
+#[derive(Args)]
+pub struct ListTagsArgs {
+    #[arg(short, long, required = true, help = "Path to configuration YAML file")]
+    pub file: String,
+}
+
+#[derive(Args)]
+pub struct CompletionArgs {
+    #[arg(value_enum)]
+    pub shell: clap_complete::Shell,
 }

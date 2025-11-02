@@ -27,7 +27,7 @@ pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
 
     if let Some(expr) = args.tags_expr {
         steps = filter_by_tags(&steps, &expr).map(|res| res.matching)?;
-    } else {
+    } else if !args.plain {
         let mut all_tags: Vec<&str> = steps
             .iter()
             .flat_map(|step| step.tags.iter().map(|t| t.as_str()))
@@ -36,6 +36,13 @@ pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
         all_tags.dedup();
 
         writeln!(out, "all tags: {}", all_tags.join(", "))?;
+    }
+
+    if args.plain {
+        steps
+            .iter()
+            .for_each(|s| writeln!(out, "{}", s.id).unwrap());
+        return Ok(());
     }
 
     let sources = steps

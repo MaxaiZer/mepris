@@ -182,4 +182,7 @@ mepris resume [--interactive] [--dry-run]
 
 mepris list-steps --file config.yaml [--tag TAG_EXPRESSION]  
 # List steps from config file  
+
+mepris completion <SHELL>
+# Generate completion for shell
 ```

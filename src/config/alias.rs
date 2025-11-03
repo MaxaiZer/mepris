@@ -89,7 +89,7 @@ pub fn load_aliases(file_directory: &Path) -> Result<PackageAliases> {
 }
 
 fn get_global_aliases_path() -> Result<PathBuf> {
-    if let Ok(custom_path) = std::env::var("GLOBAL_ALIASES_PATH") {
+    if let Ok(custom_path) = std::env::var("MEPRIS_GLOBAL_ALIASES_PATH") {
         let path = PathBuf::from(custom_path);
         if path.exists() {
             return Ok(path);

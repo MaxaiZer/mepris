@@ -14,7 +14,7 @@ fn test_resume_uses_absolute_path() {
     let original_dir = env::current_dir().expect("Failed to get current dir");
     env::set_current_dir(&dir).expect("Failed to change directory");
 
-    unsafe { env::set_var("STATE_PATH", state_file_path.to_str().unwrap()) };
+    unsafe { env::set_var("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap()) };
 
     fs::write(
         &file_path,
@@ -74,5 +74,5 @@ steps:
         "output doesn't contain 'fixed bracket': {output}"
     );
 
-    unsafe { env::remove_var("STATE_PATH") };
+    unsafe { env::remove_var("MEPRIS_STATE_PATH") };
 }

@@ -6,7 +6,7 @@ use serde::{
     de::{self, IntoDeserializer, value::StringDeserializer},
 };
 use strum::IntoEnumIterator;
-use strum_macros::{Display, EnumIter};
+use strum_macros::{Display, EnumIter, EnumString};
 
 pub mod alias;
 pub mod expr;
@@ -95,7 +95,7 @@ impl Repository {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display, Hash)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display, Hash, EnumString)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageManager {
     Apt,

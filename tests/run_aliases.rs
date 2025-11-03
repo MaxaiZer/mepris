@@ -11,6 +11,7 @@ fn test_run_local_aliases() {
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
+    unsafe { env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt"); }
 
     fs::write(
         &file_path,
@@ -43,6 +44,8 @@ git:
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
+    unsafe { env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER"); }
+
     assert!(res.is_ok());
     assert!(
         output.contains("packages vim (using alias)"),
@@ -57,6 +60,7 @@ fn test_run_local_aliases_wrong_file_name() {
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("aliases.yaml");
     let mut output = Vec::new();
+    unsafe { env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt"); }
 
     fs::write(
         &file_path,
@@ -89,6 +93,8 @@ fn test_run_local_aliases_wrong_file_name() {
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
+    unsafe { env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER"); }
+
     assert!(res.is_ok());
     assert!(
         output.contains("packages git (apt-get)"),
@@ -105,6 +111,10 @@ fn test_run_global_aliases() {
     fs::create_dir_all(aliases_path.parent().unwrap())
         .expect("Failed to create folder for aliases.yaml");
     let mut output = Vec::new();
+    unsafe {
+        env::set_var("MEPRIS_GLOBAL_ALIASES_PATH", aliases_path.to_str().unwrap());
+        env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt");
+    }
 
     fs::write(
         &file_path,
@@ -125,10 +135,6 @@ git:
     )
     .expect("Failed to write aliases.yaml");
 
-    unsafe {
-        env::set_var("GLOBAL_ALIASES_PATH", aliases_path.to_str().unwrap());
-    };
-
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
@@ -140,9 +146,12 @@ git:
         },
         &mut output,
     );
-    unsafe { env::remove_var("GLOBAL_ALIASES_PATH") };
-
     let output = String::from_utf8_lossy(&output);
+    unsafe {
+        env::remove_var("MEPRIS_GLOBAL_ALIASES_PATH");
+        env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER");
+    };
+
     assert!(res.is_ok());
     assert!(
         output.contains("packages vim (using alias)"),
@@ -160,6 +169,10 @@ fn test_run_local_aliases_override_global() {
     fs::create_dir_all(global_aliases_path.parent().unwrap())
         .expect("Failed to create folder for aliases.yaml");
     let mut output = Vec::new();
+    unsafe {
+        env::set_var("MEPRIS_GLOBAL_ALIASES_PATH", global_aliases_path.to_str().unwrap());
+        env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt");
+    };
 
     fs::write(
         &file_path,
@@ -189,10 +202,6 @@ git:
     )
     .expect("Failed to write pkg_aliases.yaml");
 
-    unsafe {
-        env::set_var("GLOBAL_ALIASES_PATH", global_aliases_path.to_str().unwrap());
-    };
-
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
@@ -204,9 +213,12 @@ git:
         },
         &mut output,
     );
-    unsafe { env::remove_var("GLOBAL_ALIASES_PATH") };
-
     let output = String::from_utf8_lossy(&output);
+    unsafe {
+        env::remove_var("MEPRIS_GLOBAL_ALIASES_PATH");
+        env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER");
+    };
+    
     assert!(res.is_ok());
     assert!(
         output.contains("packages neovim (using alias)"),

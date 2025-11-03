@@ -20,7 +20,7 @@ use crate::{
     shell::is_shell_available,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, anyhow};
 use colored::Colorize;
 use interactive::ask_confirmation;
 use logger::Logger;
@@ -378,6 +378,10 @@ fn run_script(
 }
 
 pub fn default_package_manager(platform: Platform) -> Result<PackageManager> {
+    if let Ok(fake) = std::env::var("MEPRIS_FAKE_PACKAGE_MANAGER") {
+        return fake.parse().map_err(|_| anyhow!("Invalid fake package manager"));
+    }
+
     if platform == Platform::MacOS {
         return Ok(PackageManager::Brew);
     }

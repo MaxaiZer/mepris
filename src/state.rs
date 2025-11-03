@@ -26,8 +26,8 @@ pub fn get<T: DeserializeOwned>() -> Result<T> {
 }
 
 fn get_state_path() -> Result<PathBuf> {
-    if std::env::var("STATE_PATH").is_ok() {
-        let path = std::env::var("STATE_PATH").map(PathBuf::from)?;
+    if std::env::var("MEPRIS_STATE_PATH").is_ok() {
+        let path = std::env::var("MEPRIS_STATE_PATH").map(PathBuf::from)?;
         return Ok(path);
     }
     let dirs = ProjectDirs::from("", "", "mepris").context("Could not get project dirs")?;

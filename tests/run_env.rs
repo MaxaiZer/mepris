@@ -145,7 +145,7 @@ steps:
     .expect("Failed to write file.yaml");
 
     unsafe {
-        env::set_var("STATE_PATH", state_file_path.to_str().unwrap());
+        env::set_var("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
         env::set_var("PATH4", "old_value")
     };
     fs::write(&env_file_path, "PATH4=new_value").expect("Failed to write .env");

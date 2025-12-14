@@ -4,10 +4,13 @@ use std::{
     io::{BufRead, BufReader},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use once_cell::sync::Lazy;
+use which::which;
+use crate::config::PackageManager;
 
 pub static OS_INFO: Lazy<OsInfo> = Lazy::new(|| get_os_info().expect("Failed to get OS info"));
+pub static DEFAULT_PACKAGE_MANAGER: Lazy<PackageManager> = Lazy::new(|| default_package_manager().expect("Failed to define the default package manager"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -78,4 +81,32 @@ fn get_os_info() -> Result<OsInfo> {
         id,
         id_like,
     })
+}
+
+fn default_package_manager() -> Result<PackageManager> {
+    let platform = OS_INFO.platform;
+    if let Ok(fake) = std::env::var("MEPRIS_FAKE_PACKAGE_MANAGER") {
+        return fake.parse().map_err(|_| anyhow!("Invalid fake package manager"));
+    }
+
+    if platform == Platform::MacOS {
+        return Ok(PackageManager::Brew);
+    }
+    if platform == Platform::Windows {
+        return Ok(PackageManager::Winget);
+    }
+
+    let managers = [
+        PackageManager::Pacman,
+        PackageManager::Apt,
+        PackageManager::Dnf,
+        PackageManager::Zypper,
+    ];
+
+    for mgr in managers {
+        if which(mgr.command()).is_ok() {
+            return Ok(mgr);
+        }
+    }
+    bail!("Could not detect package manager")
 }

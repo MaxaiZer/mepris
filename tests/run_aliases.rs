@@ -16,19 +16,19 @@ fn test_run_local_aliases() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    packages: ["git"]
-"#,
+        steps:
+          - id: "step1"
+            packages: ["git"]
+        "#,
     )
     .expect("Failed to write file.yaml");
 
     fs::write(
         &aliases_path,
         r#"
-git:
-  apt: vim
-"#,
+        git:
+          apt: git-local
+        "#,
     )
     .expect("Failed to write pkg_aliases.yaml");
 
@@ -48,8 +48,8 @@ git:
 
     assert!(res.is_ok());
     assert!(
-        output.contains("packages vim (using alias)"),
-        "output doesn't contain 'packages vim (using alias)': {output}"
+        output.contains("git-local (using alias)"),
+        "output doesn't contain 'git-local (using alias)': {output}"
     );
 }
 
@@ -65,19 +65,19 @@ fn test_run_local_aliases_wrong_file_name() {
     fs::write(
         &file_path,
         r#"
- steps:
-   - id: "step1"
-     packages: ["git"]
- "#,
+         steps:
+           - id: "step1"
+             packages: ["git"]
+         "#,
     )
     .expect("Failed to write file.yaml");
 
     fs::write(
         &aliases_path,
         r#"
- git:
-   apt: vim
- "#,
+         git:
+           apt: git-local
+         "#,
     )
     .expect("Failed to write aliases.yaml");
 
@@ -97,8 +97,8 @@ fn test_run_local_aliases_wrong_file_name() {
 
     assert!(res.is_ok());
     assert!(
-        output.contains("packages git (apt-get)"),
-        "output doesn't contain 'packages git (apt-get)': {output}"
+        output.contains("git (apt-get)"),
+        "output doesn't contain 'git (apt-get)': {output}"
     );
 }
 
@@ -119,19 +119,19 @@ fn test_run_global_aliases() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    packages: ["git"]
-"#,
+        steps:
+          - id: "step1"
+            packages: ["git"]
+        "#,
     )
     .expect("Failed to write file.yaml");
 
     fs::write(
         &aliases_path,
         r#"
-git:
-  apt: vim
-"#,
+        git:
+          apt: git-global
+        "#,
     )
     .expect("Failed to write aliases.yaml");
 
@@ -154,8 +154,8 @@ git:
 
     assert!(res.is_ok());
     assert!(
-        output.contains("packages vim (using alias)"),
-        "output doesn't contain 'packages vim (using alias)': {output}"
+        output.contains("git-global (using alias)"),
+        "output doesn't contain 'git-global (using alias)': {output}"
     );
 }
 
@@ -177,28 +177,28 @@ fn test_run_local_aliases_override_global() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    packages: ["git"]
-"#,
+        steps:
+          - id: "step1"
+            packages: ["git"]
+        "#,
     )
     .expect("Failed to write file.yaml");
 
     fs::write(
         &global_aliases_path,
         r#"
-git:
-  apt: vim
-"#,
+        git:
+          apt: git-global
+        "#,
     )
     .expect("Failed to write aliases.yaml");
 
     fs::write(
         &local_aliases_path,
         r#"
-git:
-  apt: neovim
-"#,
+        git:
+          apt: git-local
+        "#,
     )
     .expect("Failed to write pkg_aliases.yaml");
 
@@ -221,7 +221,62 @@ git:
     
     assert!(res.is_ok());
     assert!(
-        output.contains("packages neovim (using alias)"),
-        "output doesn't contain 'packages neovim (using alias)': {output}"
+        output.contains("git-local (using alias)"),
+        "output doesn't contain 'git-local (using alias)': {output}"
+    );
+}
+
+#[test]
+#[serial]
+fn test_run_aliases_manager_overridden() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let file_path = dir.path().join("file.yaml");
+    let local_aliases_path = dir.path().join("pkg_aliases.yaml");
+    let mut output = Vec::new();
+    unsafe {
+        env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt");
+    };
+
+    fs::write(
+        &file_path,
+        r#"
+        steps:
+          - id: "step1"
+            packages: ["git"]
+            package_source: pacman
+        "#,
+    )
+        .expect("Failed to write file.yaml");
+
+    fs::write(
+        &local_aliases_path,
+        r#"
+        git:
+          apt: git-apt
+          pacman: git-pacman
+        "#,
+    )
+        .expect("Failed to write pkg_aliases.yaml");
+
+    let res = handle(
+        RunArgs {
+            file: file_path.to_str().unwrap().to_string(),
+            tags_expr: None,
+            steps: vec![],
+            start_step_id: None,
+            interactive: false,
+            dry_run: true,
+        },
+        &mut output,
+    );
+    let output = String::from_utf8_lossy(&output);
+    unsafe {
+        env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER");
+    };
+
+    assert!(res.is_ok());
+    assert!(
+        output.contains("git-pacman (using alias)"),
+        "output doesn't contain 'git-pacman (using alias)': {output}"
     );
 }

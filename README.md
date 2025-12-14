@@ -44,7 +44,7 @@ Mepris validates that all required variables are set before starting the run (in
 - `pre_script`: A script that runs before installing packages or the main script.
 - `when`: A shell command/script used as a condition check; if it exits with 0, the step will run, otherwise it will be skipped.  
 - `tags`: List of tags to categorize steps.
-- `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `flatpak`, `zypper`, `brew`, `scoop`, `choco`, `winget`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
+- `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `flatpak`, `snap`, `zypper`, `brew`, `scoop`, `choco`, `winget`, `cargo`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
 - `packages`: List of packages to install via the system or overridden package manager.  
 **Note:** If no aliases are defined in `pkg_aliases.yaml`, Mepris passes the package names from `step.packages` directly to the specified package manager, without any automatic translation.
 - `script`: The main shell script to execute.  

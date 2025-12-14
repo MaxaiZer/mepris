@@ -62,7 +62,7 @@ steps:
     );
     let output = String::from_utf8_lossy(&output);
     assert!(res.is_ok());
-    let step2_pos = output.find("Would run step 'step2'").unwrap();
-    let step1_pos = output.find("Would run step 'step1'").unwrap();
+    let step2_pos = output.find("step2").unwrap();
+    let step1_pos = output.find("step1").unwrap();
     assert!(step2_pos < step1_pos, "Expected step2 before step1");
 }

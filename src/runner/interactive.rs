@@ -1,10 +1,11 @@
 use std::io::{self, Write};
 
-use crate::config::Step;
+use crate::config::{PackageSource, Step};
 
 use super::logger::Logger;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use colored::Colorize;
+use crate::runner::pkg::check_pkg_installed;
 
 pub enum Decision {
     Run,
@@ -71,6 +72,12 @@ fn need_truncate_step_output(step: &Step) -> bool {
 }
 
 fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
+
+    let pkg_manager = match &step.package_source {
+        Some(PackageSource::Manager(pm)) => pm.clone(),
+        _ => bail!("Package manager is not resolved"),
+    };
+
     writeln!(out, "step {}", step.id.cyan())?;
     let max_script_lines = match full {
         true => usize::MAX,
@@ -82,7 +89,18 @@ fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
         output_script(&pre_script.code, max_script_lines, out)?;
     }
     if !step.packages.is_empty() {
-        writeln!(out, "packages: {}", step.packages.join(", ").green())?;
+        let installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| check_pkg_installed(&pkg_manager, p).unwrap_or(false)).collect();
+        let not_installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| !check_pkg_installed(&pkg_manager, p).unwrap_or(false)).collect();
+
+        writeln!(out, "packages ({}):", pkg_manager.command().to_string())?;
+        if !installed.is_empty()
+        {
+            writeln!(out, "  {}: {}", "already installed".green(), installed.join(", "))?;
+        }
+        if !not_installed.is_empty()
+        {
+            writeln!(out, "  {}: {}", "would install".yellow(), not_installed.join(", "))?;
+        }
     }
     if let Some(script) = &step.script {
         writeln!(out, "script:")?;

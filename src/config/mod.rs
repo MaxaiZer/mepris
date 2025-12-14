@@ -109,6 +109,7 @@ pub enum PackageManager {
     Scoop,
     Choco,
     Winget,
+    Cargo,
 }
 
 impl PackageManager {
@@ -125,6 +126,7 @@ impl PackageManager {
             Self::Flatpak => "flatpak",
             Self::Scoop => "scoop",
             Self::Choco => "choco",
+            Self::Cargo => "cargo",
         }
     }
     pub fn commands_to_install(&self, pkgs: &[String]) -> Vec<CommandSpec> {
@@ -175,6 +177,47 @@ impl PackageManager {
             Self::Brew => vec![build("brew", &["install"], pkgs)],
             Self::Scoop => vec![build("scoop.cmd", &["install"], pkgs)],
             Self::Choco => vec![build("choco", &["install", "-y"], pkgs)],
+            Self::Cargo => vec![build("cargo", &["install"], pkgs)],
+        }
+    }
+    pub fn command_check_if_installed(&self, pkg: &str) -> CommandSpec {
+        match self {
+            Self::Pacman | Self::Yay | Self::Paru => CommandSpec {
+                bin: "pacman".to_string(),
+                args: vec!["-Q".to_string(), pkg.to_string()],
+            },
+            Self::Apt => CommandSpec {
+                bin: "apt".to_string(),
+                args: vec!["list".to_string(), "--installed".to_string(), pkg.to_string()],
+            },
+            Self::Dnf | Self::Zypper => CommandSpec {
+                bin: "rpm".to_string(),
+                args: vec!["-q".to_string(), pkg.to_string()],
+            },
+            Self::Flatpak => CommandSpec {
+                bin: "flatpak".to_string(),
+                args: vec!["info".to_string(), pkg.to_string()],
+            },
+            Self::Brew => CommandSpec {
+                bin: "brew".to_string(),
+                args: vec!["list".to_string(), "--versions".to_string(), pkg.to_string()],
+            },
+            Self::Winget => CommandSpec {
+                bin: "winget".to_string(),
+                args: vec!["list".to_string(), "--id".to_string(), pkg.to_string()],
+            },
+            Self::Scoop => CommandSpec {
+                bin: "scoop.cmd".to_string(),
+                args: vec!["list".to_string(), pkg.to_string()],
+            },
+            Self::Choco => CommandSpec {
+                bin: "choco".to_string(),
+                args: vec!["list".to_string(), "--local-only".to_string(), pkg.to_string()],
+            },
+            Self::Cargo => CommandSpec {
+                bin: "cargo".to_string(),
+                args: vec!["install".to_string(), "--list".to_string()],
+            },
         }
     }
 }

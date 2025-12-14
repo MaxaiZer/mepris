@@ -8,11 +8,10 @@ use crate::{
     helpers,
     os_info::{OS_INFO, OsInfo},
     parser::{self},
-    runner::{self, DryRunPlan},
+    runner::{self, dry},
 };
 use anyhow::{Result, bail};
 use colored::Colorize;
-
 use super::utils::{
     RunStateSaver, check_env, check_unique_id, filter_by_os, filter_by_tags,
     filter_steps_start_with_id, load_env,
@@ -114,7 +113,7 @@ fn print_info(
     excluded_by_tags: &[&Step],
     excluded_by_os: &[&Step],
     skipped: &[&Step],
-    dry_run_plan: &DryRunPlan,
+    dry_run_plan: &dry::RunPlan,
     out: &mut impl Write,
 ) -> Result<()> {
     let to_ids = |steps: &[&Step]| -> String {
@@ -127,21 +126,38 @@ fn print_info(
 
     for step in &dry_run_plan.steps_to_run {
         let step_id = step.id.as_str();
-        writeln!(out, "🚀 Would run step '{step_id}'")?;
+        writeln!(out, "🚀 Would run step {}", step_id.cyan())?;
 
         if !step.packages_to_install.is_empty() {
-            let packages = step
-                .packages_to_install
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<String>>()
-                .join(", ");
+            let get_pkgs = |installed: bool| {
+                return step.packages_to_install
+                    .iter()
+                    .filter(|p| p.installed == installed)
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ");
+            };
+            let mut installed_packages = get_pkgs(true);
+            let mut not_installed_packages = get_pkgs(false);
+
+            if !installed_packages.is_empty() {
+                installed_packages = "Already installed ".to_owned().green().to_string() + &installed_packages;
+                if !not_installed_packages.is_empty() {
+                    installed_packages = installed_packages + ",";
+                }
+            }
+            if !not_installed_packages.is_empty() {
+                not_installed_packages = "Would install packages ".to_owned().yellow().to_string() + &not_installed_packages;
+                if !installed_packages.is_empty() {
+                    not_installed_packages =  " ".to_owned() + &not_installed_packages.replace("Would", "would");
+                }
+            }
+
             let manager_info = &step.package_manager.as_ref().unwrap();
-            writeln!(
-                out,
-                "📦 Would install packages {packages} ({})",
-                manager_info.name
-            )?;
+
+            let info = format!("📦 {}{} ({})", installed_packages, not_installed_packages, manager_info.name);
+            writeln!(out, "{}", info)?;
+
             if !manager_info.installed {
                 writeln!(
                     out,

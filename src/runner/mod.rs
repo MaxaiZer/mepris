@@ -1,6 +1,5 @@
 use std::{
-    fmt,
-    io::{self, Read, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::mpsc,
@@ -9,22 +8,23 @@ use std::{
 
 mod interactive;
 mod logger;
+pub(crate) mod dry;
+mod pkg;
 
 use crate::{
     check_script::ScriptChecker,
     config::{
         PackageManager, Script, Shell, Step,
-        alias::{PackageAliases, load_aliases},
+        alias::{load_aliases},
     },
-    os_info::{OS_INFO, Platform},
-    shell::is_shell_available,
 };
 
-use anyhow::{Context, Result, bail, anyhow};
+use anyhow::{Context, Result, bail};
 use colored::Colorize;
 use interactive::ask_confirmation;
 use logger::Logger;
-use which::which;
+use crate::config::PackageSource;
+use crate::runner::pkg::{install_packages, resolve_step_package_manager};
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
@@ -41,54 +41,20 @@ pub trait StateSaver {
     fn save(&self, info: &RunState) -> Result<()>;
 }
 
-#[derive(Default)]
-pub struct StepDryRun {
-    pub id: String,
-    pub missing_shells: Vec<String>,
-    pub package_manager: Option<PackageManagerInfo>,
-    pub packages_to_install: Vec<PackageInfo>,
-}
-
-pub struct PackageInfo {
-    pub name: String,
-    pub use_alias: bool,
-}
-
-impl fmt::Display for PackageInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.use_alias {
-            write!(f, "{} (using alias)", self.name)
-        } else {
-            write!(f, "{}", self.name)
-        }
-    }
-}
-
-pub struct PackageManagerInfo {
-    pub name: String,
-    pub installed: bool,
-}
-
-pub struct DryRunPlan {
-    pub steps_to_run: Vec<StepDryRun>,
-    pub steps_ignored_by_when: Vec<String>,
-}
-
 pub fn run(
     steps: &[&Step],
     params: &RunParameters,
     state_saver: &dyn StateSaver,
     script_checker: &mut dyn ScriptChecker,
     out: &mut impl Write,
-) -> Result<Option<DryRunPlan>> {
+) -> Result<Option<dry::RunPlan>> {
     check_scripts(steps, script_checker, true)?;
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
 
     if params.dry_run {
-        return run_dry(steps, &aliases, script_checker).map(Some);
+        return dry::run(steps, &aliases, script_checker).map(Some);
     }
 
-    let default_package_manager = default_package_manager(OS_INFO.platform)?;
     let mut logger = Logger::new(steps.len(), out);
     let mut interactive = params.interactive;
 
@@ -96,7 +62,9 @@ pub fn run(
         logger.current_step = i + 1;
 
         let mut step = (*step).clone();
-        step.packages = aliases.resolve_names(&step.packages, &default_package_manager);
+        let step_package_manager = resolve_step_package_manager(&step);
+        step.package_source = Some(PackageSource::Manager(step_package_manager.clone()));
+        step.packages = aliases.resolve_names(&step.packages, &step_package_manager);
 
         if let Some(when_script) = &step.when_script {
             match run_script(
@@ -136,7 +104,7 @@ pub fn run(
         }
 
         logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
-        run_step(&step, &default_package_manager, script_checker, &mut logger)?;
+        run_step(&step, script_checker, &mut logger)?;
         logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
     }
 
@@ -153,76 +121,6 @@ pub fn run(
     writeln!(out, "✅ Run completed")?;
 
     Ok(None)
-}
-
-fn run_dry(
-    steps: &[&Step],
-    aliases: &PackageAliases,
-    script_checker: &mut dyn ScriptChecker,
-) -> Result<DryRunPlan> {
-    let mut res = DryRunPlan {
-        steps_to_run: vec![],
-        steps_ignored_by_when: vec![],
-    };
-    let default_package_manager = default_package_manager(OS_INFO.platform)?;
-
-    for step in steps {
-        if let Some(when_script) = &step.when_script {
-            match run_script(
-                when_script,
-                Path::new(&step.source_file).parent().unwrap(),
-                script_checker,
-                &mut io::sink(),
-            ) {
-                Ok(()) => (),
-                Err(_) => {
-                    res.steps_ignored_by_when.push(step.id.clone());
-                    continue;
-                }
-            }
-        }
-
-        let mut step_dry_run = StepDryRun {
-            id: step.id.clone(),
-            ..Default::default()
-        };
-
-        if !step.packages.is_empty() {
-            let package_manager = step_package_manager(&default_package_manager, step);
-
-            step_dry_run.package_manager = Some(PackageManagerInfo {
-                name: package_manager.command().to_string(),
-                installed: which(package_manager.command()).is_ok(),
-            });
-
-            step_dry_run.packages_to_install = step
-                .packages
-                .iter()
-                .map(|p| {
-                    let new_name = aliases.resolve_name(p, &package_manager);
-                    PackageInfo {
-                        name: new_name.clone(),
-                        use_alias: *p != new_name,
-                    }
-                })
-                .collect();
-        }
-
-        let not_available_shells = step
-            .all_used_shells()
-            .into_iter()
-            .filter(|s| !is_shell_available(s))
-            .map(|s| s.get_command())
-            .collect::<Vec<&str>>();
-        if !not_available_shells.is_empty() {
-            step_dry_run.missing_shells =
-                not_available_shells.iter().map(|s| s.to_string()).collect();
-        }
-
-        res.steps_to_run.push(step_dry_run);
-    }
-
-    Ok(res)
 }
 
 fn check_scripts(
@@ -261,7 +159,6 @@ fn check_scripts(
 
 fn run_step(
     step: &Step,
-    default_package_manager: &PackageManager,
     script_checker: &mut dyn ScriptChecker,
     logger: &mut Logger<impl Write>,
 ) -> Result<()> {
@@ -275,8 +172,11 @@ fn run_step(
         ))?;
     }
     if !step.packages.is_empty() {
-        let manager = step_package_manager(default_package_manager, step);
-        install_packages(&step.packages, &manager, logger)?;
+        if let Some(PackageSource::Manager(manager)) = &step.package_source {
+            install_packages(&step.packages, &manager, logger)?;
+        } else {
+            bail!("Package manager is not resolved in step");
+        }
     }
     if let Some(script) = &step.script {
         logger.log("⚙️ PROGRESS Running script...")?;
@@ -372,89 +272,6 @@ fn run_script(
         match status.code() {
             Some(code) => bail!("{} script failed with code {}", cmd, code),
             None => bail!("{} script terminated by signal", cmd),
-        }
-    }
-    Ok(())
-}
-
-pub fn default_package_manager(platform: Platform) -> Result<PackageManager> {
-    if let Ok(fake) = std::env::var("MEPRIS_FAKE_PACKAGE_MANAGER") {
-        return fake.parse().map_err(|_| anyhow!("Invalid fake package manager"));
-    }
-
-    if platform == Platform::MacOS {
-        return Ok(PackageManager::Brew);
-    }
-    if platform == Platform::Windows {
-        return Ok(PackageManager::Winget);
-    }
-
-    let managers = [
-        PackageManager::Pacman,
-        PackageManager::Apt,
-        PackageManager::Dnf,
-        PackageManager::Zypper,
-    ];
-
-    for mgr in managers {
-        if which(mgr.command()).is_ok() {
-            return Ok(mgr);
-        }
-    }
-    bail!("Could not detect package manager")
-}
-
-pub fn step_package_manager(default_manager: &PackageManager, step: &Step) -> PackageManager {
-    if let Some(source) = &step.package_source {
-        if let Some(manager) = source
-            .get_package_managers()
-            .iter()
-            .find(|m| which(m.command()).is_ok())
-        {
-            return manager.clone();
-        } else {
-            return source.get_package_managers()[0].clone();
-        }
-    }
-
-    if let Some(win_pm) = step
-        .defaults
-        .as_ref()
-        .and_then(|d| d.windows_package_manager.clone())
-        && OS_INFO.platform == Platform::Windows
-    {
-        return win_pm;
-    }
-
-    default_manager.clone()
-}
-
-fn install_packages(
-    packages: &[String],
-    manager: &PackageManager,
-    logger: &mut Logger<impl Write>,
-) -> Result<()> {
-    if which(manager.command()).is_err() {
-        bail!("Package manager {} not found", manager.command());
-    }
-
-    logger.log(&format!(
-        "📦 PROGRESS Installing packages: {}",
-        packages.join(", ")
-    ))?;
-
-    let commands = manager.commands_to_install(packages);
-    for cmd in commands {
-        let status = Command::new(cmd.bin)
-            .args(cmd.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context(format!("Failed to install {}", packages.join(", ")))?;
-
-        if !status.success() {
-            bail!("Failed to install {}", packages.join(", "));
         }
     }
     Ok(())

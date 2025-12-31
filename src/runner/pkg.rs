@@ -41,10 +41,13 @@ pub fn check_pkg_installed(manager: &PackageManager, pkg: &str) -> anyhow::Resul
     let out = String::from_utf8_lossy(&output.stdout);
 
     match manager {
-        PackageManager::Apt | PackageManager::Pacman 
-        | PackageManager::Yay | PackageManager::Paru
+        PackageManager::Pacman | PackageManager::Yay | PackageManager::Paru
         | PackageManager::Dnf | PackageManager::Zypper
         | PackageManager::Flatpak => Ok(output.status.success()),
+
+        PackageManager::Apt => {
+            Ok(output.status.success() && out.lines().any(|line| line.starts_with("ii")))
+        }
 
         PackageManager::Scoop => { //first line is "installed apps matching <pkg_name>:" + scoop uses SUBSTRING MATCH. package name is in first column
             Ok(out.lines()

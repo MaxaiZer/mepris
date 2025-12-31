@@ -187,8 +187,8 @@ impl PackageManager {
                 args: vec!["-Q".to_string(), pkg.to_string()],
             },
             Self::Apt => CommandSpec {
-                bin: "apt".to_string(),
-                args: vec!["list".to_string(), "--installed".to_string(), pkg.to_string()],
+                bin: "dpkg".to_string(),
+                args: vec!["-l".to_string(), pkg.to_string()],
             },
             Self::Dnf | Self::Zypper => CommandSpec {
                 bin: "rpm".to_string(),

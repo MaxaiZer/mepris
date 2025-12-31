@@ -186,3 +186,12 @@ mepris list-steps --file config.yaml [--tag TAG_EXPRESSION]
 mepris completion <SHELL>
 # Generate completion for shell
 ```
+## Installation
+
+```bash
+curl -L https://github.com/MaxaiZer/mepris/releases/latest/download/mepris-x86_64-unknown-linux-gnu.zip \
+  -o /tmp/mepris.zip \
+&& unzip -p /tmp/mepris.zip mepris | sudo tee /usr/local/bin/mepris > /dev/null \
+&& sudo chmod +x /usr/local/bin/mepris \
+&& rm /tmp/mepris.zip
+```

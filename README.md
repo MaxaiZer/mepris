@@ -174,17 +174,18 @@ steps:
 ## CLI Usage
 
 ```bash
-mepris run --file config.yaml [--tag TAGS_EXPRESSION] [--step STEP] [--interactive] [--dry-run]  
 # Execute steps from configuration file  
+mepris run --file config.yaml [--tag TAGS_EXPRESSION] [--step STEP] [--interactive] [--dry-run]
 
-mepris resume [--interactive] [--dry-run]  
 # Resume previously failed run
+mepris resume [--interactive] [--dry-run]  
 
-mepris list-steps --file config.yaml [--tag TAG_EXPRESSION]  
 # List steps from config file  
+mepris list-steps --file config.yaml [--tag TAG_EXPRESSION]  
 
-mepris completion <SHELL>
 # Generate completion for shell
+mepris completion <SHELL>
+e.g. mepris completion fish > ~/.config/fish/completions/mepris.fish
 ```
 ## Installation
 

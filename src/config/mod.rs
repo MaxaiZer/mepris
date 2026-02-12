@@ -110,6 +110,7 @@ pub enum PackageManager {
     Choco,
     Winget,
     Cargo,
+    Npm,
 }
 
 impl PackageManager {
@@ -127,6 +128,7 @@ impl PackageManager {
             Self::Scoop => "scoop",
             Self::Choco => "choco",
             Self::Cargo => "cargo",
+            Self::Npm => "npm"
         }
     }
     pub fn commands_to_install(&self, pkgs: &[String]) -> Vec<CommandSpec> {
@@ -178,6 +180,7 @@ impl PackageManager {
             Self::Scoop => vec![build("scoop.cmd", &["install"], pkgs)],
             Self::Choco => vec![build("choco", &["install", "-y"], pkgs)],
             Self::Cargo => vec![build("cargo", &["install"], pkgs)],
+            Self::Npm => vec![build("npm", &["i", "-g"], pkgs)]
         }
     }
     pub fn command_check_if_installed(&self, pkg: &str) -> CommandSpec {
@@ -218,6 +221,10 @@ impl PackageManager {
                 bin: "cargo".to_string(),
                 args: vec!["install".to_string(), "--list".to_string()],
             },
+            Self::Npm => CommandSpec {
+                bin: "npm".to_string(),
+                args: vec!["list".to_string(), "--depth=0".to_string(), "-g".to_string(), pkg.to_string()],
+            }
         }
     }
 }

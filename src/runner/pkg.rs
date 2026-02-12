@@ -43,7 +43,7 @@ pub fn check_pkg_installed(manager: &PackageManager, pkg: &str) -> anyhow::Resul
     match manager {
         PackageManager::Pacman | PackageManager::Yay | PackageManager::Paru
         | PackageManager::Dnf | PackageManager::Zypper
-        | PackageManager::Flatpak => Ok(output.status.success()),
+        | PackageManager::Flatpak | PackageManager::Npm => Ok(output.status.success()),
 
         PackageManager::Apt => {
             Ok(output.status.success() && out.lines().any(|line| line.starts_with("ii")))

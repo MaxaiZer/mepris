@@ -17,13 +17,16 @@ The steps from included files are loaded in order before the steps from the curr
 
 ### defaults (optional)
 
-Override default values for your setup, such as:
+You can override the default settings:
 
 ```yaml
 defaults:
-  windows_package_manager: scoop # or choco; default is winget
+  windows_package_manager: winget # or scoop / choco
+  windows_shell: powershell # or pwsh
+  linux_shell: bash # or pwsh
+  macos_shell: bash # or pwsh
 ```
-Defaults are propagated to all included configuration files, unless they explicitly override the same keys.  
+These defaults apply to all included config files, unless overridden.
 
 ### Step Fields
 

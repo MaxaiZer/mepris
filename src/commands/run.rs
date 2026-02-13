@@ -1,20 +1,20 @@
 use std::io::Write;
 
 use crate::{
-    check_script::DefaultScriptChecker,
     cli::RunArgs,
     commands::utils::filter_by_ids,
     config::Step,
     helpers,
-    os_info::{OS_INFO, OsInfo},
+    os_info::{OsInfo, OS_INFO},
     parser::{self},
     runner::{self, dry},
 };
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use colored::Colorize;
+use crate::runner::script_checker::DefaultScriptChecker;
 use super::utils::{
-    RunStateSaver, check_env, check_unique_id, filter_by_os, filter_by_tags,
-    filter_steps_start_with_id, load_env,
+    check_env, check_unique_id, filter_by_os, filter_by_tags, filter_steps_start_with_id,
+    load_env, RunStateSaver,
 };
 
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {

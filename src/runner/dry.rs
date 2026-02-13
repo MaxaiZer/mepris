@@ -1,12 +1,11 @@
-use crate::check_script::ScriptChecker;
+use crate::runner::script_checker::ScriptChecker;
 use crate::config::alias::PackageAliases;
-use crate::config::{Step};
-use crate::runner::{run_script};
+use crate::runner::{run_script, Step};
 use crate::shell::is_shell_available;
 use std::path::Path;
 use std::{fmt, io};
 use which::which;
-use crate::runner::pkg::{check_pkg_installed, resolve_step_package_manager};
+use crate::runner::pkg::{check_pkg_installed};
 
 #[derive(Default)]
 pub struct StepRun {
@@ -43,7 +42,7 @@ pub struct RunPlan {
 }
 
 pub fn run(
-    steps: &[&Step],
+    steps: &[Step],
     aliases: &PackageAliases,
     script_checker: &mut dyn ScriptChecker,
 ) -> anyhow::Result<RunPlan> {
@@ -74,7 +73,7 @@ pub fn run(
         };
 
         if !step.packages.is_empty() {
-            let package_manager = resolve_step_package_manager(step);
+            let package_manager = step.package_manager.clone();
 
             step_dry_run.package_manager = Some(PackageManagerInfo {
                 name: package_manager.command().to_string(),

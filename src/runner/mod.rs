@@ -5,26 +5,27 @@ use std::{
     sync::mpsc,
     thread,
 };
+use std::collections::HashSet;
 
 mod interactive;
 mod logger;
 pub(crate) mod dry;
 mod pkg;
+pub mod script_checker;
 
-use crate::{
-    check_script::ScriptChecker,
-    config::{
-        PackageManager, Script, Shell, Step,
-        alias::{load_aliases},
-    },
-};
+use crate::{config, config::{
+    alias::load_aliases,
+    PackageManager,
+}};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use interactive::ask_confirmation;
 use logger::Logger;
-use crate::config::PackageSource;
+use script_checker::ScriptChecker;
+use crate::os_info::{Platform, OS_INFO};
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
+use crate::shell::Shell;
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
@@ -41,30 +42,96 @@ pub trait StateSaver {
     fn save(&self, info: &RunState) -> Result<()>;
 }
 
+pub struct Script {
+    shell: Shell,
+    code: String,
+}
+
+pub struct Step {
+    pub id: String,
+    pub when_script: Option<Script>,
+    pub package_manager: PackageManager,
+    pub packages: Vec<String>,
+    pub pre_script: Option<Script>,
+    pub script: Option<Script>,
+    pub source_file: String,
+}
+
+impl From<&config::Step> for Step {
+    fn from(config: &config::Step) -> Self {
+
+        let resolve_shell = |script: &Option<config::Script>| -> Option<Script> {
+
+            if script.is_none() {
+                return None;
+            }
+
+            let script = script.as_ref().unwrap();
+            let res_shell: Shell;
+
+            if script.shell.is_some() {
+                res_shell = script.shell.as_ref().unwrap().clone();
+            } else {
+                res_shell = match OS_INFO.platform {
+                    Platform::Linux => config.defaults.as_ref().and_then(|d| d.linux_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                    Platform::MacOS => config.defaults.as_ref().and_then(|d| d.macos_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                    Platform::Windows => config.defaults.as_ref().and_then(|d| d.windows_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                }
+            }
+
+            Some(Script {
+                shell: res_shell,
+                code: script.code.clone()
+            })
+        };
+
+        Step {
+            id: config.id.clone(),
+            when_script: resolve_shell(&config.when_script),
+            package_manager: resolve_step_package_manager(&config),
+            packages: config.packages.clone(),
+            pre_script: resolve_shell(&config.pre_script),
+            script: resolve_shell(&config.script),
+            source_file: config.source_file.clone(),
+        }
+    }
+}
+
+impl Step {
+    pub fn all_used_shells(&self) -> HashSet<Shell> {
+        [
+            self.when_script.as_ref(),
+            self.pre_script.as_ref(),
+            self.script.as_ref(),
+        ]
+            .iter()
+            .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
+            .collect()
+    }
+}
+
 pub fn run(
-    steps: &[&Step],
+    steps: &[&config::Step],
     params: &RunParameters,
     state_saver: &dyn StateSaver,
     script_checker: &mut dyn ScriptChecker,
     out: &mut impl Write,
 ) -> Result<Option<dry::RunPlan>> {
-    check_scripts(steps, script_checker, true)?;
+
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
+    let mut steps: Vec<Step> = steps.iter().map(|s| (*s).into()).collect();
+    check_scripts(&steps, script_checker, true)?;
 
     if params.dry_run {
-        return dry::run(steps, &aliases, script_checker).map(Some);
+        return dry::run(&steps, &aliases, script_checker).map(Some);
     }
 
     let mut logger = Logger::new(steps.len(), out);
     let mut interactive = params.interactive;
 
-    for (i, step) in steps.iter().cloned().enumerate() {
+    for (i, step) in steps.iter_mut().enumerate() {
         logger.current_step = i + 1;
-
-        let mut step = (*step).clone();
-        let step_package_manager = resolve_step_package_manager(&step);
-        step.package_source = Some(PackageSource::Manager(step_package_manager.clone()));
-        step.packages = aliases.resolve_names(&step.packages, &step_package_manager);
+        step.packages = aliases.resolve_names(&step.packages, &step.package_manager);
 
         if let Some(when_script) = &step.when_script {
             match run_script(
@@ -124,7 +191,7 @@ pub fn run(
 }
 
 fn check_scripts(
-    steps: &[&Step],
+    steps: &[Step],
     script_checker: &mut dyn ScriptChecker,
     skip_if_shell_unavailable: bool,
 ) -> Result<()> {
@@ -172,11 +239,7 @@ fn run_step(
         ))?;
     }
     if !step.packages.is_empty() {
-        if let Some(PackageSource::Manager(manager)) = &step.package_source {
-            install_packages(&step.packages, &manager, logger)?;
-        } else {
-            bail!("Package manager is not resolved in step");
-        }
+        install_packages(&step.packages, &step.package_manager, logger)?;
     }
     if let Some(script) = &step.script {
         logger.log("⚙️ PROGRESS Running script...")?;
@@ -200,8 +263,8 @@ fn run_script(
 
     let (cmd, args) = match script.shell {
         Shell::Bash => (Shell::Bash.get_command(), vec!["-c", &script.code]),
-        Shell::PowerShellCore => (
-            Shell::PowerShellCore.get_command(),
+        Shell::PowerShell | Shell::PowerShellCore => (
+            script.shell.get_command(),
             vec!["-NoProfile", "-Command", &script.code],
         ),
     };
@@ -280,12 +343,13 @@ fn run_script(
 #[cfg(test)]
 mod tests {
     use crate::{
-        check_script::DefaultScriptChecker, config::PackageSource, shell::mock_available_shells,
+        config::PackageSource, shell::mock_available_shells,
     };
 
     use super::*;
     use std::{collections::HashSet, fs, io};
     use tempfile::tempdir;
+    use crate::runner::script_checker::DefaultScriptChecker;
 
     struct FakeStateSaver;
     impl StateSaver for FakeStateSaver {
@@ -320,10 +384,10 @@ mod tests {
         let dir = tempdir().expect("Failed to create temp dir");
         let step_path = dir.path().join("file.yaml").to_str().unwrap().to_string();
 
-        let steps = vec![Step {
+        let steps = vec![config::Step {
             id: "parent".to_string(),
-            script: Some(Script {
-                shell: Shell::Bash,
+            script: Some(config::Script {
+                shell: Some(Shell::Bash),
                 code: "cat file.txt".to_string(),
             }),
             source_file: step_path.clone(),
@@ -334,7 +398,7 @@ mod tests {
             .expect("Failed to write temp file");
 
         let _ = run(
-            &steps.iter().collect::<Vec<&Step>>(),
+            &steps.iter().collect::<Vec<&config::Step>>(),
             &RunParameters {
                 dry_run: false,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
@@ -352,17 +416,17 @@ mod tests {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
-        let steps = vec![Step {
+        let steps = vec![config::Step {
             id: "step".to_string(),
-            script: Some(Script {
-                shell: Shell::PowerShellCore,
+            script: Some(config::Script {
+                shell: Some(Shell::PowerShellCore),
                 code: "cat file.txt".to_string(),
             }),
             ..Default::default()
         }];
 
         let plan = run(
-            &steps.iter().collect::<Vec<&Step>>(),
+            &steps.iter().collect::<Vec<&config::Step>>(),
             &RunParameters {
                 dry_run: true,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
@@ -371,8 +435,7 @@ mod tests {
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut output,
-        )
-        .unwrap()
+        )?
         .unwrap();
 
         assert_eq!(plan.steps_to_run.len(), 1);
@@ -384,6 +447,8 @@ mod tests {
                     .as_ref()
                     .unwrap()
                     .shell
+                    .as_ref()
+                    .unwrap()
                     .get_command()
                     .to_string()
             )
@@ -396,7 +461,7 @@ mod tests {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
-        let steps = vec![Step {
+        let steps = vec![config::Step {
             id: "step".to_string(),
             packages: vec!["git".to_string()],
             package_source: Some(PackageSource::Manager(PackageManager::Choco)),
@@ -404,7 +469,7 @@ mod tests {
         }];
 
         let plan = run(
-            &steps.iter().collect::<Vec<&Step>>(),
+            &steps.iter().collect::<Vec<&config::Step>>(),
             &RunParameters {
                 dry_run: true,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
@@ -413,8 +478,7 @@ mod tests {
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut output,
-        )
-        .unwrap()
+        )?
         .unwrap();
 
         assert_eq!(plan.steps_to_run.len(), 1);
@@ -433,10 +497,10 @@ mod tests {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
-        let steps = vec![Step {
+        let steps = vec![config::Step {
             id: "step".to_string(),
-            when_script: Some(Script {
-                shell: Shell::Bash,
+            when_script: Some(config::Script {
+                shell: Some(Shell::Bash),
                 code: "exit 1".to_string(),
             }),
             source_file: "/file.yaml".to_string(),
@@ -444,7 +508,7 @@ mod tests {
         }];
 
         let plan = run(
-            &steps.iter().collect::<Vec<&Step>>(),
+            &steps.iter().collect::<Vec<&config::Step>>(),
             &RunParameters {
                 dry_run: true,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
@@ -453,8 +517,7 @@ mod tests {
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
             &mut output,
-        )
-        .unwrap()
+        )?
         .unwrap();
 
         assert!(plan.steps_to_run.is_empty());

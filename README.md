@@ -1,6 +1,6 @@
 # Mepris
 
-Cross-platform declarative system setup tool.
+Declarative environment bootstrapper.
 
 ## Config Structure
 
@@ -51,11 +51,11 @@ Mepris validates that all required variables are set before starting the run (in
 
 ### Scripts
 
-Default shell for running scripts is bash.
+Default shell for running scripts is bash for Linux/macOS and powershell (the built-in legacy one) for Windows.
 
 ```yaml
 script: |
-  echo "bash" # will use bash
+  echo "bash" # shell will depend on current OS
 ```
 
 To use different shell, specify it explicitly with the syntax:
@@ -66,7 +66,7 @@ script:
   run: |
     echo "pwsh" # will use pwsh
 ```
-**Note**: Only two shells are supported: `bash` and `pwsh` (PowerShell Core).  
+**Note**: Only three shells are supported: `bash`, `powershell` (legacy), `pwsh` (cross-platform).  
 All scripts (`when`, `pre_script`, `script`) are executed with their working directory set to the folder where their YAML file resides.
 
 ### Execution order

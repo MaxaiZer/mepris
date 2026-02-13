@@ -3,7 +3,6 @@ use std::io::Write;
 use anyhow::Result;
 use commands::{completion, list_steps, list_tags, resume, run};
 
-mod check_script;
 pub mod cli;
 pub mod commands;
 mod config;

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use expr::Expr;
 use serde::{
     Deserialize, Deserializer,
@@ -7,6 +5,7 @@ use serde::{
 };
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
+use crate::shell::Shell;
 
 pub mod alias;
 pub mod expr;
@@ -14,6 +13,32 @@ pub mod expr;
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Defaults {
     pub windows_package_manager: Option<PackageManager>,
+    pub windows_shell: Option<Shell>,
+    pub linux_shell: Option<Shell>,
+    pub macos_shell: Option<Shell>,
+}
+
+impl Defaults {
+    pub fn merge(inherited: &Option<Defaults>, overrides: &Option<Defaults>) -> Self {
+        
+        let inherited = inherited.as_ref();
+        let overrides = overrides.as_ref();
+        
+        Defaults {
+            windows_package_manager: overrides
+                .and_then(|overrides| overrides.windows_package_manager.clone())
+                .or(inherited.and_then(|d| d.windows_package_manager.clone())),
+            windows_shell: overrides
+                .and_then(|overrides| overrides.windows_shell.clone())
+                .or(inherited.and_then(|d| d.windows_shell.clone())),
+            linux_shell: overrides
+                .and_then(|overrides| overrides.linux_shell.clone())
+                .or(inherited.and_then(|d| d.linux_shell.clone())),
+            macos_shell: overrides
+                .and_then(|overrides| overrides.macos_shell.clone())
+                .or(inherited.and_then(|d| d.macos_shell.clone())),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -229,28 +254,9 @@ impl PackageManager {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash, EnumIter)]
-#[serde(rename_all = "lowercase")]
-#[derive(Default)]
-pub enum Shell {
-    #[default]
-    Bash,
-    #[serde(rename = "pwsh")]
-    PowerShellCore,
-}
-
-impl Shell {
-    pub fn get_command(&self) -> &'static str {
-        match self {
-            Self::Bash => "bash",
-            Self::PowerShellCore => "pwsh",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Script {
-    pub shell: Shell,
+    pub shell: Option<Shell>,
     pub code: String,
 }
 
@@ -259,7 +265,6 @@ pub struct Script {
 enum ScriptDef {
     Short(String),
     Full {
-        #[serde(default)]
         shell: Shell,
         #[serde(rename = "run")]
         code: String,
@@ -274,10 +279,10 @@ impl<'de> Deserialize<'de> for Script {
         let helper = ScriptDef::deserialize(deserializer)?;
         Ok(match helper {
             ScriptDef::Short(code) => Script {
-                shell: Shell::Bash,
+                shell: None,
                 code,
             },
-            ScriptDef::Full { shell, code } => Script { shell, code },
+            ScriptDef::Full { shell, code } => Script { shell: Some(shell), code },
         })
     }
 }
@@ -303,19 +308,6 @@ pub struct Step {
     pub source_file: String,
     #[serde(skip_deserializing)]
     pub defaults: Option<Defaults>,
-}
-
-impl Step {
-    pub fn all_used_shells(&self) -> HashSet<Shell> {
-        [
-            self.when_script.as_ref(),
-            self.pre_script.as_ref(),
-            self.script.as_ref(),
-        ]
-        .iter()
-        .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
-        .collect()
-    }
 }
 
 #[derive(Debug, Deserialize)]

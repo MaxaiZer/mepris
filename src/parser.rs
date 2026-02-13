@@ -35,12 +35,7 @@ fn parse_recursive(
     let config: Config = serde_yaml::from_str(&content)
         .with_context(|| format!("YAML parse error in file '{abs_path_str}'"))?;
 
-    let config_defaults = Defaults {
-        windows_package_manager: config
-            .defaults
-            .and_then(|d| d.windows_package_manager)
-            .or(inherited_defaults.and_then(|d| d.windows_package_manager)),
-    };
+    let config_defaults = Defaults::merge(&inherited_defaults, &config.defaults);
 
     let mut steps = vec![];
 
@@ -76,6 +71,7 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+    use crate::shell::Shell;
 
     #[test]
     fn test_parse_with_relative_include() {
@@ -87,20 +83,20 @@ mod tests {
         fs::write(
             &parent_path,
             r#"
-includes:
-  - child.yaml
-steps:
-  - id: "step1"
-"#,
+            includes:
+              - child.yaml
+            steps:
+              - id: "step1"
+            "#,
         )
         .expect("Failed to write parent.yaml");
 
         fs::write(
             &child_path,
             r#"
-steps:
-  - id: "step2"
-"#,
+            steps:
+              - id: "step2"
+            "#,
         )
         .expect("Failed to write child.yaml");
 
@@ -133,20 +129,20 @@ steps:
         fs::write(
             &parent_path,
             r#"
-includes:
-  - tmp/child.yaml
-steps:
-  - id: "step1"
-"#,
+            includes:
+              - tmp/child.yaml
+            steps:
+              - id: "step1"
+            "#,
         )
         .expect("Failed to write parent.yaml");
 
         fs::write(
             &child_path,
             r#"
-steps:
-  - id: "step2"
-"#,
+            steps:
+              - id: "step2"
+            "#,
         )
         .expect("Failed to write child.yaml");
 
@@ -176,63 +172,63 @@ steps:
         fs::write(
             &parent_path,
             r#"
-includes:
-  - child_with_override.yaml
-  - child_without_override.yaml
-defaults:
-  windows_package_manager: scoop
-steps:
-  - id: "step1"
-"#,
+            includes:
+              - child_with_override.yaml
+              - child_without_override.yaml
+            defaults:
+              windows_package_manager: scoop
+              windows_shell: bash
+              linux_shell: pwsh
+              macos_shell: pwsh
+            steps:
+              - id: "step1"
+            "#,
         )
         .expect("Failed to write parent.yaml");
 
         fs::write(
             dir.path().join("child_with_override.yaml"),
             r#"
-defaults:
-  windows_package_manager: choco
-steps:
-  - id: "step2"
-"#,
+            defaults:
+              windows_package_manager: choco
+              windows_shell: pwsh
+              linux_shell: bash
+              macos_shell: bash
+            steps:
+              - id: "step_with_override"
+            "#,
         )
         .expect("Failed to write child_with_override.yaml");
 
         fs::write(
             dir.path().join("child_without_override.yaml"),
             r#"
-steps:
-  - id: "step3"
-"#,
+            steps:
+              - id: "step_without_override"
+            "#,
         )
         .expect("Failed to write child_without_override.yaml");
 
         let steps = parse(parent_path.to_str().unwrap()).expect("Failed to parse YAML");
 
+        let find_defaults = |step_id: &str| -> Defaults {
+            steps
+                .iter()
+                .find(|s| s.id == step_id)
+                .unwrap()
+                .defaults
+                .clone()
+                .unwrap()
+        };
+
         assert_eq!(steps.len(), 3);
-        assert_eq!(
-            steps
-                .iter()
-                .find(|s| s.id == "step2")
-                .unwrap()
-                .defaults
-                .clone()
-                .unwrap()
-                .windows_package_manager
-                .unwrap(),
-            PackageManager::Choco
-        );
-        assert_eq!(
-            steps
-                .iter()
-                .find(|s| s.id == "step3")
-                .unwrap()
-                .defaults
-                .clone()
-                .unwrap()
-                .windows_package_manager
-                .unwrap(),
-            PackageManager::Scoop
-        );
+        assert_eq!(find_defaults("step_with_override").windows_package_manager.unwrap(), PackageManager::Choco);
+        assert_eq!(find_defaults("step_with_override").windows_shell.unwrap(), Shell::PowerShellCore);
+        assert_eq!(find_defaults("step_with_override").linux_shell.unwrap(), Shell::Bash);
+        assert_eq!(find_defaults("step_with_override").macos_shell.unwrap(), Shell::Bash);
+        assert_eq!(find_defaults("step_without_override").windows_package_manager.unwrap(), PackageManager::Scoop);
+        assert_eq!(find_defaults("step_without_override").windows_shell.unwrap(), Shell::Bash);
+        assert_eq!(find_defaults("step_without_override").linux_shell.unwrap(), Shell::PowerShellCore);
+        assert_eq!(find_defaults("step_without_override").macos_shell.unwrap(), Shell::PowerShellCore);
     }
 }

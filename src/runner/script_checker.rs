@@ -4,9 +4,8 @@ use std::{io::Write, process::Command};
 use anyhow::{Context, Result, bail};
 use blake3::Hasher;
 use tempfile::NamedTempFile;
-
-use crate::config::Script;
-use crate::config::Shell;
+use crate::runner::Script;
+use crate::shell::Shell;
 use crate::shell::is_shell_available;
 
 pub trait ScriptChecker {
@@ -51,6 +50,7 @@ impl ScriptChecker for DefaultScriptChecker {
         let ps_command = format!("[scriptblock]::Create((Get-Content -Raw '{path_str}'))");
         let args = match script.shell {
             Shell::Bash => vec!["-n", path_str],
+            Shell::PowerShell => vec!["-NoProfile", "-Command", &ps_command],
             Shell::PowerShellCore => vec!["-NoProfile", "-Command", &ps_command],
         };
 

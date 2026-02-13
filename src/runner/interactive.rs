@@ -1,11 +1,10 @@
 use std::io::{self, Write};
 
-use crate::config::{PackageSource, Step};
-
 use super::logger::Logger;
-use anyhow::{bail, Result};
+use anyhow::{Result};
 use colored::Colorize;
 use crate::runner::pkg::check_pkg_installed;
+use crate::runner::Step;
 
 pub enum Decision {
     Run,
@@ -73,10 +72,7 @@ fn need_truncate_step_output(step: &Step) -> bool {
 
 fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
 
-    let pkg_manager = match &step.package_source {
-        Some(PackageSource::Manager(pm)) => pm.clone(),
-        _ => bail!("Package manager is not resolved"),
-    };
+    let pkg_manager = &step.package_manager;
 
     writeln!(out, "step {}", step.id.cyan())?;
     let max_script_lines = match full {

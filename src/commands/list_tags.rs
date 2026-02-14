@@ -1,8 +1,8 @@
 use std::io::Write;
 
-use crate::{cli::ListTagsArgs, config::Step, os_info::OS_INFO, parser};
+use crate::{cli::ListTagsArgs, config::Step, system::os_info::OS_INFO};
 use anyhow::Result;
-
+use crate::config::parser;
 use super::utils::{check_unique_id, filter_by_os};
 
 pub fn handle(args: ListTagsArgs, out: &mut impl Write) -> Result<()> {

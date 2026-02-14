@@ -2,7 +2,7 @@ use std::io;
 
 use clap::Parser;
 use colored::Colorize;
-use mepris::{cli, shell};
+use mepris::{cli, system::shell};
 
 fn main() {
     shell::detect_shells();

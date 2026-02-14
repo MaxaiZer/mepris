@@ -1,14 +1,15 @@
 use expr::Expr;
 use serde::{
-    Deserialize, Deserializer,
-    de::{self, IntoDeserializer, value::StringDeserializer},
+    de::{self, value::StringDeserializer, IntoDeserializer}, Deserialize,
+    Deserializer,
 };
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter, EnumString};
-use crate::shell::Shell;
+use crate::system::shell::Shell;
 
 pub mod alias;
 pub mod expr;
+pub mod parser;
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Defaults {

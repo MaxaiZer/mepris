@@ -12,6 +12,7 @@ mod logger;
 pub(crate) mod dry;
 mod pkg;
 pub mod script_checker;
+pub mod state;
 
 use crate::{config, config::{
     alias::load_aliases,
@@ -23,9 +24,9 @@ use colored::Colorize;
 use interactive::ask_confirmation;
 use logger::Logger;
 use script_checker::ScriptChecker;
-use crate::os_info::{Platform, OS_INFO};
+use crate::system::os_info::{Platform, OS_INFO};
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
-use crate::shell::Shell;
+use crate::system::shell::Shell;
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
@@ -343,7 +344,7 @@ fn run_script(
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::PackageSource, shell::mock_available_shells,
+        config::PackageSource, system::shell::mock_available_shells,
     };
 
     use super::*;

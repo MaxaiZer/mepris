@@ -5,12 +5,12 @@ use crate::{
     commands::utils::filter_by_ids,
     config::Step,
     helpers,
-    os_info::{OsInfo, OS_INFO},
-    parser::{self},
+    system::os_info::{OsInfo, OS_INFO},
     runner::{self, dry},
 };
 use anyhow::{bail, Result};
 use colored::Colorize;
+use crate::config::parser::{self};
 use crate::runner::script_checker::DefaultScriptChecker;
 use super::utils::{
     check_env, check_unique_id, filter_by_os, filter_by_tags, filter_steps_start_with_id,
@@ -244,7 +244,7 @@ fn test_filter() -> Result<()> {
     ];
 
     let os_info = OsInfo {
-        platform: crate::os_info::Platform::Linux,
+        platform: crate::system::os_info::Platform::Linux,
         id: None,
         id_like: vec![],
     };
@@ -337,7 +337,7 @@ fn test_unknown_tags() -> Result<()> {
     ];
 
     let os_info = OsInfo {
-        platform: crate::os_info::Platform::Linux,
+        platform: crate::system::os_info::Platform::Linux,
         id: None,
         id_like: vec![],
     };

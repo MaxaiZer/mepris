@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 use anyhow::{bail, Context};
 use which::which;
 use crate::config::{PackageManager, Step};
-use crate::os_info::{Platform, DEFAULT_PACKAGE_MANAGER, OS_INFO};
+use crate::system::os_info::{Platform, DEFAULT_PACKAGE_MANAGER, OS_INFO};
 use crate::runner::logger::Logger;
 
 pub fn resolve_step_package_manager(step: &Step) -> PackageManager {

@@ -5,14 +5,14 @@ use std::{
 
 use crate::{
     config::{
-        Step,
         expr::{eval_os_expr, eval_tags_expr, parse},
+        Step,
     },
-    os_info::OsInfo,
+    system::os_info::OsInfo,
     runner::{self, RunState},
-    state,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
+use crate::runner::state;
 
 pub struct RunStateSaver {
     pub file: String,

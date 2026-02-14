@@ -5,8 +5,8 @@ use anyhow::{Context, Result, bail};
 use blake3::Hasher;
 use tempfile::NamedTempFile;
 use crate::runner::Script;
-use crate::shell::Shell;
-use crate::shell::is_shell_available;
+use crate::system::shell::Shell;
+use crate::system::shell::is_shell_available;
 
 pub trait ScriptChecker {
     fn check_script(&mut self, script: &Script, skip_if_shell_unavailable: bool) -> Result<()>;

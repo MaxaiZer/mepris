@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::sync::Mutex;
 use serde::Deserialize;
 use strum_macros::EnumIter;
-use crate::os_info::{Platform, OS_INFO};
+use crate::system::os_info::{Platform, OS_INFO};
 
 static AVAILABLE_SHELLS: Mutex<Option<HashSet<Shell>>> = Mutex::new(None);
 static MOCKED_SHELLS: Mutex<Option<HashSet<Shell>>> = Mutex::new(None);

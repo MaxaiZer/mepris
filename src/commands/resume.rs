@@ -2,11 +2,8 @@ use std::io::Write;
 
 use anyhow::Result;
 
-use crate::{
-    cli::{ResumeArgs, RunArgs},
-    state,
-};
-
+use crate::cli::{ResumeArgs, RunArgs};
+use crate::runner::state;
 use super::{run, utils::RunInfo};
 
 pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {

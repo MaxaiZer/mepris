@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::os_info::OsInfo;
+use crate::system::os_info::OsInfo;
 use anyhow::{Context, Result, bail};
 use pest::{Parser, iterators::Pair};
 use pest_derive::Parser;
@@ -166,7 +166,7 @@ fn test_os_expr() {
         ("linux && !arch && !fedora && !ubuntu", false),
     ];
     let os_info = OsInfo {
-        platform: crate::os_info::Platform::Linux,
+        platform: crate::system::os_info::Platform::Linux,
         id: Some("ubuntu".to_string()),
         id_like: vec!["debian".to_string()],
     };
@@ -190,7 +190,7 @@ fn test_os_expr_empty_idlike() {
         ("!%arch", false),
     ];
     let os_info = OsInfo {
-        platform: crate::os_info::Platform::Linux,
+        platform: crate::system::os_info::Platform::Linux,
         id: Some("arch".to_string()),
         id_like: vec![],
     };

@@ -41,7 +41,7 @@ fn parse_recursive(
 
     if let Some(includes) = config.includes {
         for include in includes {
-            let nested_dir = abs_path.parent().unwrap_or(Path::new("."));
+            let nested_dir = abs_path.parent().unwrap_or(Path::new("../.."));
             let nested = parse_recursive(
                 &include,
                 visited_files,
@@ -71,7 +71,7 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
-    use crate::shell::Shell;
+    use crate::system::shell::Shell;
 
     #[test]
     fn test_parse_with_relative_include() {

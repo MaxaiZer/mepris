@@ -1,7 +1,7 @@
 use crate::runner::script_checker::ScriptChecker;
 use crate::config::alias::PackageAliases;
 use crate::runner::{run_script, Step};
-use crate::shell::is_shell_available;
+use crate::system::shell::is_shell_available;
 use std::path::Path;
 use std::{fmt, io};
 use which::which;

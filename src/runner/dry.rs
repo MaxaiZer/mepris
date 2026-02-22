@@ -5,7 +5,6 @@ use crate::system::shell::is_shell_available;
 use std::path::Path;
 use std::{fmt, io};
 use which::which;
-use crate::runner::pkg::{check_pkg_installed};
 
 #[derive(Default)]
 pub struct StepRun {
@@ -88,7 +87,7 @@ pub fn run(
                     PackageInfo {
                         name: new_name.clone(),
                         use_alias: *p != new_name,
-                        installed: check_pkg_installed(&package_manager, &new_name).unwrap_or(false)
+                        installed: package_manager.is_installed(&new_name).unwrap_or(false)
                     }
                 })
                 .collect();

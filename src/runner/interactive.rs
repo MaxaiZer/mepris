@@ -3,7 +3,6 @@ use std::io::{self, Write};
 use super::logger::Logger;
 use anyhow::{Result};
 use colored::Colorize;
-use crate::runner::pkg::check_pkg_installed;
 use crate::runner::Step;
 
 pub enum Decision {
@@ -85,8 +84,8 @@ fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
         output_script(&pre_script.code, max_script_lines, out)?;
     }
     if !step.packages.is_empty() {
-        let installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| check_pkg_installed(&pkg_manager, p).unwrap_or(false)).collect();
-        let not_installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| !check_pkg_installed(&pkg_manager, p).unwrap_or(false)).collect();
+        let installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| pkg_manager.is_installed(&p).unwrap_or(false)).collect();
+        let not_installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| !pkg_manager.is_installed(&p).unwrap_or(false)).collect();
 
         writeln!(out, "packages ({}):", pkg_manager.command().to_string())?;
         if !installed.is_empty()

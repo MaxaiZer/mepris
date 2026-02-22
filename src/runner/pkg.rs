@@ -2,9 +2,10 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use anyhow::{bail, Context};
 use which::which;
-use crate::config::{PackageManager, Step};
+use crate::config::{Step};
 use crate::system::os_info::{Platform, DEFAULT_PACKAGE_MANAGER, OS_INFO};
 use crate::runner::logger::Logger;
+use crate::system::pkg::PackageManager;
 
 pub fn resolve_step_package_manager(step: &Step) -> PackageManager {
     if let Some(source) = &step.package_source {

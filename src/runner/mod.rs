@@ -16,7 +16,6 @@ pub mod state;
 
 use crate::{config, config::{
     alias::load_aliases,
-    PackageManager,
 }};
 
 use anyhow::{bail, Context, Result};
@@ -26,6 +25,7 @@ use logger::Logger;
 use script_checker::ScriptChecker;
 use crate::system::os_info::{Platform, OS_INFO};
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
+use crate::system::pkg::PackageManager;
 use crate::system::shell::Shell;
 
 pub struct RunParameters {
@@ -344,13 +344,14 @@ fn run_script(
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::PackageSource, system::shell::mock_available_shells,
+        system::shell::mock_available_shells,
     };
 
     use super::*;
     use std::{collections::HashSet, fs, io};
     use tempfile::tempdir;
     use crate::runner::script_checker::DefaultScriptChecker;
+    use crate::system::pkg::PackageSource;
 
     struct FakeStateSaver;
     impl StateSaver for FakeStateSaver {

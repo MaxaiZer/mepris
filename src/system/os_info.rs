@@ -7,7 +7,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use once_cell::sync::Lazy;
 use which::which;
-use crate::config::PackageManager;
+use crate::system::pkg::PackageManager;
 
 pub static OS_INFO: Lazy<OsInfo> = Lazy::new(|| get_os_info().expect("Failed to get OS info"));
 pub static DEFAULT_PACKAGE_MANAGER: Lazy<PackageManager> = Lazy::new(|| default_package_manager().expect("Failed to define the default package manager"));

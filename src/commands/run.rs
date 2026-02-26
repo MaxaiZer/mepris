@@ -182,30 +182,22 @@ fn print_info(
     }
 
     if !excluded_by_tags.is_empty() {
-        writeln!(
-            out,
-            "🚫 Ignored steps due to tag mismatch: {}",
-            to_ids(excluded_by_tags)
-        )?;
+        writeln!(out, "⏭️ Skipped steps due to tag mismatch: {}", to_ids(excluded_by_tags))?;
     }
 
     if !excluded_by_os.is_empty() {
-        writeln!(
-            out,
-            "🚫 Ignored steps due to OS mismatch: {}",
-            to_ids(excluded_by_os)
-        )?;
+        writeln!(out, "⏭️ Skipped steps due to OS mismatch: {}", to_ids(excluded_by_os))?;
     }
 
     if !skipped.is_empty() {
         writeln!(out, "⏭️ Skipped steps due to resume: {}", to_ids(skipped))?;
     }
 
-    if !dry_run_plan.steps_ignored_by_when.is_empty() {
+    if !dry_run_plan.steps_skipped_by_when.is_empty() {
         writeln!(
-            out,
-            "🚫 Ignored steps due to failed when script: {}",
-            dry_run_plan.steps_ignored_by_when.join(", ")
+            out, 
+            "⏭️ Skipped steps due to failed when script: {}",
+            dry_run_plan.steps_skipped_by_when.join(", ")
         )?;
     }
 

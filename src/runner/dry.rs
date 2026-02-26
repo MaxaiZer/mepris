@@ -37,7 +37,7 @@ pub struct PackageManagerInfo {
 
 pub struct RunPlan {
     pub steps_to_run: Vec<StepRun>,
-    pub steps_ignored_by_when: Vec<String>,
+    pub steps_skipped_by_when: Vec<String>,
 }
 
 pub fn run(
@@ -47,7 +47,7 @@ pub fn run(
 ) -> anyhow::Result<RunPlan> {
     let mut res = RunPlan {
         steps_to_run: vec![],
-        steps_ignored_by_when: vec![],
+        steps_skipped_by_when: vec![],
     };
 
     for step in steps {
@@ -60,7 +60,7 @@ pub fn run(
             ) {
                 Ok(()) => (),
                 Err(_) => {
-                    res.steps_ignored_by_when.push(step.id.clone());
+                    res.steps_skipped_by_when.push(step.id.clone());
                     continue;
                 }
             }

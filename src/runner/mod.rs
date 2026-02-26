@@ -523,7 +523,7 @@ mod tests {
         .unwrap();
 
         assert!(plan.steps_to_run.is_empty());
-        assert!(plan.steps_ignored_by_when.contains(&steps[0].id));
+        assert!(plan.steps_skipped_by_when.contains(&steps[0].id));
         Ok(())
     }
 

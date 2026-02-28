@@ -68,8 +68,9 @@ pub fn check_env(steps: &[&Step]) -> Result<()> {
     if !missing.is_empty() {
         let mut msg = String::from("Undefined environment variables:");
         missing.iter().for_each(|(env, steps)| {
+            let steps_str = if steps.len() > 1 { "steps" } else { "step" };
             msg.push_str(&format!(
-                "\n{} (required by steps {})",
+                "\n{} (required by {steps_str} {})",
                 env,
                 steps.join(", ")
             ));

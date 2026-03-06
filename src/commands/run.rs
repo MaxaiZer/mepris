@@ -1,5 +1,5 @@
 use std::io::Write;
-
+use std::path::Path;
 use crate::{
     cli::RunArgs,
     commands::utils::filter_by_ids,
@@ -124,9 +124,21 @@ fn print_info(
             .join(", ")
     };
 
+    let mut previous_source_file = "";
+
     for step in &dry_run_plan.steps_to_run {
+
+        let cur_source_file = Path::new(&step.source_file).file_name().and_then(|s| s.to_str()).unwrap();
+        if cur_source_file != previous_source_file {
+            if previous_source_file != "" {
+                writeln!(out)?;
+            }
+            writeln!(out, "From {}:", cur_source_file)?;
+            previous_source_file = cur_source_file;
+        }
+
         let step_id = step.id.as_str();
-        writeln!(out, "🚀 Would run step {}", step_id.cyan())?;
+        writeln!(out, "  🚀 Would run step {}", step_id.cyan())?;
 
         if !step.packages_to_install.is_empty() {
             let get_pkgs = |installed: bool| {
@@ -155,13 +167,13 @@ fn print_info(
 
             let manager_info = &step.package_manager.as_ref().unwrap();
 
-            let info = format!("📦 {}{} ({})", installed_packages, not_installed_packages, manager_info.name);
+            let info = format!("  📦 {}{} ({})", installed_packages, not_installed_packages, manager_info.name);
             writeln!(out, "{}", info)?;
 
             if !manager_info.installed {
                 writeln!(
                     out,
-                    "{} Step '{step_id}' uses package manager that is not currently available. Make sure it's installed in the previous steps",
+                    "  {} Step '{step_id}' uses package manager that is not currently available. Make sure it's installed in the previous steps",
                     "Warning:".yellow(),
                 )?;
             }
@@ -171,7 +183,7 @@ fn print_info(
             let shells = step.missing_shells.join(", ");
             writeln!(
                 out,
-                "{} Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",
+                "  {} Step '{step_id}' uses shell(s) that are not currently available. Make sure they are installed in the previous steps: {shells}",
                 "Warning:".yellow(),
             )?;
         }
@@ -179,6 +191,10 @@ fn print_info(
 
     if dry_run_plan.steps_to_run.is_empty() {
         writeln!(out, "❌ No steps would be run")?;
+    }
+    
+    if !excluded_by_tags.is_empty() || !excluded_by_os.is_empty() || !skipped.is_empty() || !dry_run_plan.steps_to_run.is_empty() {
+        writeln!(out)?;
     }
 
     if !excluded_by_tags.is_empty() {

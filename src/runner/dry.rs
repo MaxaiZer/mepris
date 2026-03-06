@@ -9,6 +9,7 @@ use which::which;
 #[derive(Default)]
 pub struct StepRun {
     pub id: String,
+    pub source_file: String,
     pub missing_shells: Vec<String>,
     pub package_manager: Option<PackageManagerInfo>,
     pub packages_to_install: Vec<PackageInfo>,
@@ -68,6 +69,7 @@ pub fn run(
 
         let mut step_dry_run = StepRun {
             id: step.id.clone(),
+            source_file: step.source_file.clone(),
             ..Default::default()
         };
 

@@ -44,13 +44,15 @@ Each step supports the following optional fields:
     - `!%arch || manjaro` — runs on non Arch-based distributions or on Manjaro
 - `env`: A list of required environment variables.
 Mepris validates that all required variables are set before starting the run (including .env if present).  
-- `pre_script`: A script that runs before installing packages or the main script.
-- `when`: A shell command/script used as a condition check; if it exits with 0, the step will run, otherwise it will be skipped.  
+- `pre_script`: A script that runs before installing packages or the main script. Typically used to prepare the environment (for example, adding repositories or package sources).
+- `when`: A script used as a condition check; if it exits with 0, the step will run, otherwise it will be skipped. This acts as a filter and does not determine whether the step is completed.
 - `tags`: List of tags to categorize steps.
 - `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `flatpak`, `snap`, `zypper`, `brew`, `scoop`, `choco`, `winget`, `cargo`, `npm`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
 - `packages`: List of packages to install via the system or overridden package manager.  
 **Note:** If no aliases are defined in `pkg_aliases.yaml`, Mepris passes the package names from `step.packages` directly to the specified package manager, without any automatic translation.
 - `script`: The main shell script to execute.  
+- `check`: A verification script used to determine whether the step is completed (exit code 0). If a step defines a `script`, it is recommended to provide a `check` script.  
+  Without it, program cannot determine the completion state, so the step will not marked as completed in `dry-run` or interactive mode.
 
 ### Scripts
 
@@ -70,13 +72,14 @@ script:
     echo "pwsh" # will use pwsh
 ```
 **Note**: Only three shells are supported: `bash`, `powershell` (legacy), `pwsh` (cross-platform).  
-All scripts (`when`, `pre_script`, `script`) are executed with their working directory set to the folder where their YAML file resides.
+All scripts (`when`, `pre_script`, `script`, `check`) are executed with their working directory set to the folder where their YAML file resides.
 
 ### Execution order
 - when — check condition (skip step if fails)
-- pre_script — run preliminary commands
+- pre_script — run preparation commands before installing packages
 - Install packages via the appropriate package manager
 - Run the main script
+- Run the check script
 
 ## .env support
 
@@ -138,28 +141,30 @@ steps:
     tags: ["terminal"]
     packages: ["ripgrep", "neovim"]
 
-  - id: yazi-common
-    os: "!%debian"
-    tags: ["terminal"]
-    packages: ["yazi"]
+  - id: install-nvidia-pascal-drivers
+    os: "%arch"
+    when: |  #only if nvidia pascal card
+      lspci | grep -i 'NVIDIA.*GP10' >/dev/null 2>&1
+    packages:
+      [
+        "nvidia-580xx-dkms",
+        "nvidia-580xx-utils",
+        "lib32-nvidia-580xx-utils",
+        "nvidia-580xx-settings",
+        "opencl-nvidia-580xx",
+      ]
+    package_source: aur
 
-  - id: yazi-debian
-    os: "%debian"
-    tags: ["terminal"]
-    when: |
-      if command -v yazi >/dev/null 2>&1; then exit 1; else exit 0; fi
-    script: |
-      wget -qO yazi.zip https://github.com/sxyazi/yazi/releases/latest/download/yazi-x86_64-unknown-linux-gnu.zip
-      unzip -q yazi.zip -d yazi-temp
-      sudo mv yazi-temp/*/{ya,yazi} /usr/local/bin
-      rm -rf yazi-temp yazi.zip
+  - id: install-cron-arch
+    os: "%arch"
+    packages: ["cronie"]
+    script: sudo systemctl enable --now cronie.service
+    check: systemctl is-active --quiet cronie.service
 
   - id: nerd-fonts-windows
     os: "windows"
     tags: ["terminal", "fonts"]
-    pre_script:
-      shell: pwsh
-      run: scoop bucket add nerd-fonts
+    pre_script: scoop bucket add nerd-fonts
     packages: ["JetBrainsMono-NF"]
 
   - id: setup-git
@@ -168,11 +173,6 @@ steps:
     script: |
       git config --global user.email "$GIT_EMAIL"
       git config --global user.name "$GIT_NAME"
-
-  - id: install-anki-arch
-    os: "%arch"
-    packages: ["anki"]
-    package_source: aur
 ```
 ## CLI Usage
 

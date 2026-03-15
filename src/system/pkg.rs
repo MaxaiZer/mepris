@@ -79,6 +79,25 @@ impl PackageManager {
         }
     }
     pub fn install(&self, pkgs: &[String]) -> anyhow::Result<()> {
+
+        if let Ok(cmd) = std::env::var("MEPRIS_INSTALL_COMMAND") {
+            let parts = shell_words::split(&cmd)?;
+            let (program, args) = parts.split_first().unwrap();
+
+            let success = Command::new(program)
+                .args(args)
+                .args(pkgs)
+                .output()?
+                .status
+                .success();
+
+            if success {
+                return Ok(());
+            } else {
+                bail!("Failed to install {}", pkgs.join(", "));
+            }
+        }
+
         fn build_cmd(cmd: &str, args: &[&str], pkgs: &[String]) -> CommandSpec {
             CommandSpec {
                 bin: cmd.into(),
@@ -147,6 +166,11 @@ impl PackageManager {
         Ok(())
     }
     pub fn is_installed(&self, pkg: &str) -> anyhow::Result<bool> {
+        
+        if let Ok(res) = std::env::var("MEPRIS_IS_INSTALLED_RESULT") {
+            return Ok(res == "0");
+        }
+
         let cmd = match self {
             Self::Pacman | Self::Yay | Self::Paru => CommandSpec {
                 bin: "pacman".to_string(),

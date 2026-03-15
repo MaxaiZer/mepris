@@ -85,7 +85,7 @@ fn get_os_info() -> Result<OsInfo> {
 
 fn default_package_manager() -> Result<PackageManager> {
     let platform = OS_INFO.platform;
-    if let Ok(fake) = std::env::var("MEPRIS_FAKE_PACKAGE_MANAGER") {
+    if let Ok(fake) = std::env::var("MEPRIS_DEFAULT_PACKAGE_MANAGER") {
         return fake.parse().map_err(|_| anyhow!("Invalid fake package manager"));
     }
 

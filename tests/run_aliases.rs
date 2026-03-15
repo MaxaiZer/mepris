@@ -6,12 +6,12 @@ use tempfile::tempdir;
 
 #[test]
 #[serial]
-fn test_run_local_aliases() {
+fn test_dry_run_local_aliases() {
     let dir = tempdir().expect("Failed to create temp dir");
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
-    unsafe { env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt"); }
+    unsafe { env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt"); }
 
     fs::write(
         &file_path,
@@ -44,7 +44,7 @@ fn test_run_local_aliases() {
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe { env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER"); }
+    unsafe { env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER"); }
 
     assert!(res.is_ok());
     assert!(
@@ -54,13 +54,67 @@ fn test_run_local_aliases() {
 }
 
 #[test]
+#[cfg(unix)]
 #[serial]
-fn test_run_local_aliases_wrong_file_name() {
+fn test_run_local_aliases() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let file_path = dir.path().join("file.yaml");
+    let aliases_path = dir.path().join("pkg_aliases.yaml");
+    let mut output = Vec::new();
+    unsafe { env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt"); }
+    unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "echo installing"); }
+    unsafe { env::set_var("MEPRIS_IS_INSTALLED_RESULT", "1"); }
+
+    fs::write(
+        &file_path,
+        r#"
+        steps:
+          - id: "step1"
+            packages: ["git"]
+        "#,
+    )
+        .expect("Failed to write file.yaml");
+
+    fs::write(
+        &aliases_path,
+        r#"
+        git:
+          apt: git-local
+        "#,
+    )
+        .expect("Failed to write pkg_aliases.yaml");
+
+    let res = handle(
+        RunArgs {
+            file: file_path.to_str().unwrap().to_string(),
+            tags_expr: None,
+            steps: vec![],
+            start_step_id: None,
+            interactive: false,
+            dry_run: false,
+        },
+        &mut output,
+    );
+    let output = String::from_utf8_lossy(&output);
+    unsafe { env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER"); }
+    unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+    unsafe { env::remove_var("MEPRIS_IS_INSTALLED_RESULT"); }
+
+    assert!(res.is_ok(), "error: {}", res.unwrap_err().to_string());
+    assert!(
+        output.contains("Installing packages: git-local"),
+        "output doesn't contain 'Installing packages: git-local': {output}"
+    );
+}
+
+#[test]
+#[serial]
+fn test_dry_run_local_aliases_wrong_file_name() {
     let dir = tempdir().expect("Failed to create temp dir");
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("aliases.yaml");
     let mut output = Vec::new();
-    unsafe { env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt"); }
+    unsafe { env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt"); }
 
     fs::write(
         &file_path,
@@ -93,7 +147,7 @@ fn test_run_local_aliases_wrong_file_name() {
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe { env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER"); }
+    unsafe { env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER"); }
 
     assert!(res.is_ok());
     assert!(
@@ -104,7 +158,7 @@ fn test_run_local_aliases_wrong_file_name() {
 
 #[test]
 #[serial]
-fn test_run_global_aliases() {
+fn test_dry_run_global_aliases() {
     let dir = tempdir().expect("Failed to create temp dir");
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("folder/aliases.yaml");
@@ -113,7 +167,7 @@ fn test_run_global_aliases() {
     let mut output = Vec::new();
     unsafe {
         env::set_var("MEPRIS_GLOBAL_ALIASES_PATH", aliases_path.to_str().unwrap());
-        env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
     }
 
     fs::write(
@@ -149,7 +203,7 @@ fn test_run_global_aliases() {
     let output = String::from_utf8_lossy(&output);
     unsafe {
         env::remove_var("MEPRIS_GLOBAL_ALIASES_PATH");
-        env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER");
+        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
     };
 
     assert!(res.is_ok());
@@ -161,7 +215,7 @@ fn test_run_global_aliases() {
 
 #[test]
 #[serial]
-fn test_run_local_aliases_override_global() {
+fn test_dry_run_local_aliases_override_global() {
     let dir = tempdir().expect("Failed to create temp dir");
     let file_path = dir.path().join("file.yaml");
     let local_aliases_path = dir.path().join("pkg_aliases.yaml");
@@ -171,7 +225,7 @@ fn test_run_local_aliases_override_global() {
     let mut output = Vec::new();
     unsafe {
         env::set_var("MEPRIS_GLOBAL_ALIASES_PATH", global_aliases_path.to_str().unwrap());
-        env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
     };
 
     fs::write(
@@ -216,7 +270,7 @@ fn test_run_local_aliases_override_global() {
     let output = String::from_utf8_lossy(&output);
     unsafe {
         env::remove_var("MEPRIS_GLOBAL_ALIASES_PATH");
-        env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER");
+        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
     };
     
     assert!(res.is_ok());
@@ -228,13 +282,13 @@ fn test_run_local_aliases_override_global() {
 
 #[test]
 #[serial]
-fn test_run_aliases_manager_overridden() {
+fn test_dry_run_aliases_manager_overridden() {
     let dir = tempdir().expect("Failed to create temp dir");
     let file_path = dir.path().join("file.yaml");
     let local_aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
     unsafe {
-        env::set_var("MEPRIS_FAKE_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
     };
 
     fs::write(
@@ -271,7 +325,7 @@ fn test_run_aliases_manager_overridden() {
     );
     let output = String::from_utf8_lossy(&output);
     unsafe {
-        env::remove_var("MEPRIS_FAKE_PACKAGE_MANAGER");
+        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
     };
 
     assert!(res.is_ok());

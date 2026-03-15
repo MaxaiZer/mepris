@@ -1,6 +1,6 @@
 [package]
 name = "mepris"
-version = "0.14.1"
+version = "0.15.0"
 edition = "2024"
 
 [dependencies]
@@ -22,6 +22,8 @@ once_cell = "1.21.3"
 dotenvy = "0.15.7"
 comfy-table = "7.2.1"
 clap_complete = "4.5.58"
+shell-words = "1"
 
 [dev-dependencies]
+rstest = "0.26.1"
 serial_test = "3"

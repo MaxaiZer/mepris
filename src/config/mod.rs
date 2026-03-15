@@ -130,6 +130,8 @@ pub struct Step {
     pub packages: Vec<String>,
     pub pre_script: Option<Script>,
     pub script: Option<Script>,
+    #[serde(rename = "check")]
+    pub check_script: Option<Script>,
 
     #[serde(skip_deserializing)]
     pub source_file: String,

@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::io::{self, Write};
 
 use super::logger::Logger;
 use anyhow::{Result};
 use colored::Colorize;
-use crate::runner::Step;
+use crate::runner::{Step, StepCompletedResult};
 
 pub enum Decision {
     Run,
@@ -14,7 +15,7 @@ pub enum Decision {
 
 const MAX_SCRIPT_LINES: usize = 8;
 
-pub fn ask_confirmation(step: &Step, logger: &mut Logger<impl Write>) -> Result<Decision> {
+pub fn ask_confirmation(step: &Step, completion: &StepCompletedResult, logger: &mut Logger<impl Write>) -> Result<Decision> {
     let mut cmds = vec!["r=Run", "s=Skip", "a=Abort", "l=Leave interactive mode"];
     if need_truncate_step_output(step) {
         cmds.push("v=View full step");
@@ -24,7 +25,7 @@ pub fn ask_confirmation(step: &Step, logger: &mut Logger<impl Write>) -> Result<
         .map(|s| s.split('=').next().unwrap().to_string())
         .collect();
 
-    print_step(step, logger.out, false)?;
+    print_step(step, completion, logger.out, false)?;
     logger.log(&format!(
         "\nPROGRESS What do you want to do? ({}): ",
         cmds.join(", ")
@@ -48,7 +49,7 @@ pub fn ask_confirmation(step: &Step, logger: &mut Logger<impl Write>) -> Result<
             "a" => return Ok(Decision::Abort),
             "l" => return Ok(Decision::LeaveInteractiveMode),
             "v" => {
-                print_step(step, logger.out, true)?;
+                print_step(step, completion, logger.out, true)?;
                 logger.log(&format!(
                     "\nPROGRESS What do you want to do? ({}): ",
                     cmds.join(", ")
@@ -69,7 +70,7 @@ fn need_truncate_step_output(step: &Step) -> bool {
         || step.script.as_ref().is_some_and(|s| is_too_long(&s.code))
 }
 
-fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
+fn print_step(step: &Step, completion: &StepCompletedResult, out: &mut impl Write, full: bool) -> Result<()> {
 
     let pkg_manager = &step.package_manager;
 
@@ -84,16 +85,32 @@ fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
         output_script(&pre_script.code, max_script_lines, out)?;
     }
     if !step.packages.is_empty() {
-        let installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| pkg_manager.is_installed(&p).unwrap_or(false)).collect();
-        let not_installed: Vec<&str> = step.packages.iter().map(|s| s.as_str()).filter(|p| !pkg_manager.is_installed(&p).unwrap_or(false)).collect();
+
+        let not_installed_pkgs: HashSet<String> = match &completion {
+            StepCompletedResult::NotInstalledPackages(pkgs) => {
+                HashSet::from_iter(pkgs.iter().cloned())
+            }
+            _ => HashSet::new(),
+        };
+
+        let mut installed: Vec<&str> = Vec::new();
+        let mut not_installed: Vec<&str> = Vec::new();
+
+        for pkg in &step.packages {
+            if *completion != StepCompletedResult::NotInstalledPackageManager && not_installed_pkgs.contains(&pkg.name) {
+                not_installed.push(pkg.name.as_str());
+            } else if *completion != StepCompletedResult::NotInstalledPackageManager {
+                installed.push(pkg.name.as_str());
+            } else {
+                not_installed.push(pkg.name.as_str());
+            }
+        }
 
         writeln!(out, "packages ({}):", pkg_manager.command().to_string())?;
-        if !installed.is_empty()
-        {
+        if !installed.is_empty() {
             writeln!(out, "  {}: {}", "already installed".green(), installed.join(", "))?;
         }
-        if !not_installed.is_empty()
-        {
+        if !not_installed.is_empty() {
             writeln!(out, "  {}: {}", "would install".yellow(), not_installed.join(", "))?;
         }
     }
@@ -101,6 +118,15 @@ fn print_step(step: &Step, out: &mut impl Write, full: bool) -> Result<()> {
         writeln!(out, "script:")?;
         output_script(&script.code, max_script_lines, out)?;
     }
+
+    match completion {
+        StepCompletedResult::Completed => { writeln!(out, "status: {}", "completed".green())?; }
+        StepCompletedResult::NotInstalledPackageManager => { writeln!(out, "status: {}", "package manager not installed".yellow())?; }
+        StepCompletedResult::NotInstalledPackages(_) => {}
+        StepCompletedResult::FailedCheckScript => { writeln!(out, "status: {}", "check-script failed".yellow())?; }
+        StepCompletedResult::HasScriptWithoutCheck => { writeln!(out, "status: {}", "all packages are installed, but completion cannot be verified without a check-script".yellow())?; }
+    }
+
     Ok(())
 }
 

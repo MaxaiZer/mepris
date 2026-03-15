@@ -12,10 +12,8 @@ use anyhow::{bail, Result};
 use colored::Colorize;
 use crate::config::parser::{self};
 use crate::runner::script_checker::DefaultScriptChecker;
-use super::utils::{
-    check_env, check_unique_id, filter_by_os, filter_by_tags, filter_steps_start_with_id,
-    load_env, RunStateSaver,
-};
+use crate::runner::StepCompletedResult;
+use super::utils::{check_env, check_unique_id, filter_by_os, filter_by_tags, filter_steps_start_with_id, load_env, RunStateSaver};
 
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     let state_saver = RunStateSaver {
@@ -138,6 +136,17 @@ fn print_info(
         }
 
         let step_id = step.id.as_str();
+
+        if step.step_completed_result == StepCompletedResult::Completed {
+            writeln!(out, "  ✅ Step {} completed", step_id.cyan())?;
+            continue;
+        }
+
+        if step.step_completed_result == StepCompletedResult::HasScriptWithoutCheck {
+            writeln!(out, "  ❔ Step {}: all packages installed, but no check-script; step will still run", step_id.cyan())?;
+            continue;
+        }
+
         writeln!(out, "  🚀 Would run step {}", step_id.cyan())?;
 
         if !step.packages_to_install.is_empty() {
@@ -192,7 +201,7 @@ fn print_info(
     if dry_run_plan.steps_to_run.is_empty() {
         writeln!(out, "❌ No steps would be run")?;
     }
-    
+
     if !excluded_by_tags.is_empty() || !excluded_by_os.is_empty() || !skipped.is_empty() || !dry_run_plan.steps_to_run.is_empty() {
         writeln!(out)?;
     }
@@ -212,7 +221,7 @@ fn print_info(
     if !dry_run_plan.steps_skipped_by_when.is_empty() {
         writeln!(
             out, 
-            "⏭️ Skipped steps due to failed when script: {}",
+            "⏭️ Skipped steps due to failed when-script: {}",
             dry_run_plan.steps_skipped_by_when.join(", ")
         )?;
     }

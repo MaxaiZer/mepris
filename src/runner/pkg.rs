@@ -36,7 +36,8 @@ pub fn install_packages(
     manager: &PackageManager,
     logger: &mut Logger<impl Write>,
 ) -> anyhow::Result<()> {
-    if which(manager.command()).is_err() {
+    
+    if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && which(manager.command()).is_err() {
         bail!("Package manager {} not found", manager.command());
     }
 

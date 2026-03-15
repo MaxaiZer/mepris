@@ -1,10 +1,8 @@
 use std::{
-    io::{Read, Write},
+    io::{Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
-    sync::mpsc,
-    thread,
 };
+use std::cmp::PartialEq;
 use std::collections::HashSet;
 
 mod interactive;
@@ -13,6 +11,7 @@ pub(crate) mod dry;
 mod pkg;
 pub mod script_checker;
 pub mod state;
+mod script;
 
 use crate::{config, config::{
     alias::load_aliases,
@@ -20,11 +19,14 @@ use crate::{config, config::{
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
+use which::which;
 use interactive::ask_confirmation;
 use logger::Logger;
 use script_checker::ScriptChecker;
+use crate::config::alias::PackageAliases;
 use crate::system::os_info::{Platform, OS_INFO};
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
+use crate::runner::script::{run_noninteractive_script, run_script, ScriptResult};
 use crate::system::pkg::PackageManager;
 use crate::system::shell::Shell;
 
@@ -43,23 +45,40 @@ pub trait StateSaver {
     fn save(&self, info: &RunState) -> Result<()>;
 }
 
+pub struct Package {
+    pub name: String,
+    pub used_alias: bool,
+}
+
 pub struct Script {
     shell: Shell,
     code: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Default, Clone)]
+pub enum StepCompletedResult {
+    #[default]
+    Completed,
+    NotInstalledPackageManager,
+    NotInstalledPackages(Vec<String>),
+    FailedCheckScript,
+    HasScriptWithoutCheck,
 }
 
 pub struct Step {
     pub id: String,
     pub when_script: Option<Script>,
     pub package_manager: PackageManager,
-    pub packages: Vec<String>,
+    pub packages: Vec<Package>,
     pub pre_script: Option<Script>,
     pub script: Option<Script>,
+    pub check_script: Option<Script>,
     pub source_file: String,
 }
 
-impl From<&config::Step> for Step {
-    fn from(config: &config::Step) -> Self {
+impl Step {
+
+    fn from(config_step: &config::Step, aliases: &PackageAliases) -> Self {
 
         let resolve_shell = |script: &Option<config::Script>| -> Option<Script> {
 
@@ -74,9 +93,9 @@ impl From<&config::Step> for Step {
                 res_shell = script.shell.as_ref().unwrap().clone();
             } else {
                 res_shell = match OS_INFO.platform {
-                    Platform::Linux => config.defaults.as_ref().and_then(|d| d.linux_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
-                    Platform::MacOS => config.defaults.as_ref().and_then(|d| d.macos_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
-                    Platform::Windows => config.defaults.as_ref().and_then(|d| d.windows_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                    Platform::Linux => config_step.defaults.as_ref().and_then(|d| d.linux_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                    Platform::MacOS => config_step.defaults.as_ref().and_then(|d| d.macos_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                    Platform::Windows => config_step.defaults.as_ref().and_then(|d| d.windows_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
                 }
             }
 
@@ -86,19 +105,27 @@ impl From<&config::Step> for Step {
             })
         };
 
+        let pkg_manager =  resolve_step_package_manager(&config_step);
+
+        let mut packages: Vec<Package> = Vec::new();
+        for cfg_pkg in &config_step.packages {
+            let mut resolved_pkg = Package{name: aliases.resolve_name(cfg_pkg, &pkg_manager), used_alias: false};
+            resolved_pkg.used_alias = cfg_pkg != &resolved_pkg.name;
+            packages.push(resolved_pkg);
+        }
+
         Step {
-            id: config.id.clone(),
-            when_script: resolve_shell(&config.when_script),
-            package_manager: resolve_step_package_manager(&config),
-            packages: config.packages.clone(),
-            pre_script: resolve_shell(&config.pre_script),
-            script: resolve_shell(&config.script),
-            source_file: config.source_file.clone(),
+            id: config_step.id.clone(),
+            when_script: resolve_shell(&config_step.when_script),
+            package_manager: pkg_manager,
+            packages,
+            pre_script: resolve_shell(&config_step.pre_script),
+            script: resolve_shell(&config_step.script),
+            check_script: resolve_shell(&config_step.check_script),
+            source_file: config_step.source_file.clone(),
         }
     }
-}
 
-impl Step {
     pub fn all_used_shells(&self) -> HashSet<Shell> {
         [
             self.when_script.as_ref(),
@@ -108,6 +135,40 @@ impl Step {
             .iter()
             .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
             .collect()
+    }
+
+    pub fn directory(&self) -> &Path {
+        Path::new(&self.source_file).parent().unwrap()
+    }
+
+    pub fn is_completed(&self, script_checker: Option<&mut dyn ScriptChecker>) -> Result<StepCompletedResult> {
+
+        if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && which(self.package_manager.command()).is_err() {
+            return Ok(StepCompletedResult::NotInstalledPackageManager);
+        }
+
+        let mut not_installed_pkgs = Vec::new();
+        for pkg in self.packages.iter() {
+            if !self.package_manager.is_installed(&pkg.name)? {
+                not_installed_pkgs.push(pkg.name.clone());
+            }
+        }
+
+        if !not_installed_pkgs.is_empty() {
+            return Ok(StepCompletedResult::NotInstalledPackages(not_installed_pkgs));
+        }
+
+        if let Some(check_script) = self.check_script.as_ref() {
+            let res = run_noninteractive_script(check_script, self.directory(), script_checker)?;
+            match res {
+                ScriptResult::NotZeroExitStatus(_) => return Ok(StepCompletedResult::FailedCheckScript),
+                ScriptResult::Success => {},
+            }
+        } else if self.script.is_some() {
+            return Ok(StepCompletedResult::HasScriptWithoutCheck);
+        }
+
+        Ok(StepCompletedResult::Completed)
     }
 }
 
@@ -120,11 +181,11 @@ pub fn run(
 ) -> Result<Option<dry::RunPlan>> {
 
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
-    let mut steps: Vec<Step> = steps.iter().map(|s| (*s).into()).collect();
-    check_scripts(&steps, script_checker, true)?;
+    let mut steps: Vec<Step> = steps.iter().map(|s| Step::from(s, &aliases)).collect();
+    check_scripts_before_run(&steps, script_checker)?;
 
     if params.dry_run {
-        return dry::run(&steps, &aliases, script_checker).map(Some);
+        return dry::run(&steps).map(Some);
     }
 
     let mut logger = Logger::new(steps.len(), out);
@@ -132,23 +193,23 @@ pub fn run(
 
     for (i, step) in steps.iter_mut().enumerate() {
         logger.current_step = i + 1;
-        step.packages = aliases.resolve_names(&step.packages, &step.package_manager);
 
         if let Some(when_script) = &step.when_script {
             match run_script(
                 when_script,
                 Path::new(&step.source_file).parent().unwrap(),
-                script_checker,
+                Some(script_checker),
                 logger.out,
             ) {
-                Ok(()) => (),
-                Err(_) => {
+                Ok(ScriptResult::Success) => (),
+                Ok(ScriptResult::NotZeroExitStatus(code)) => {
                     logger.log(&format!(
-                        "⏭️ PROGRESS Step '{}' skipped due to failed when script",
-                        step.id
+                        "⏭️ PROGRESS Step '{}' skipped due to when-script returning exit code {}",
+                        step.id, code
                     ))?;
                     continue;
                 }
+                Err(e) => bail!("Failed to run when-script for step '{}': {}", step.id, e),
             }
         }
 
@@ -162,13 +223,17 @@ pub fn run(
             logger.log(&format!("{} Failed to save run state", "Warning:".yellow()))?;
         }
 
+        let completion = step.is_completed(Some(script_checker))?;
         if interactive {
-            match ask_confirmation(&step, &mut logger)? {
+            match ask_confirmation(&step, &completion, &mut logger)? {
                 interactive::Decision::Run => {}
                 interactive::Decision::Skip => continue,
                 interactive::Decision::Abort => return Ok(None),
                 interactive::Decision::LeaveInteractiveMode => interactive = false,
             }
+        } else if completion == StepCompletedResult::Completed {
+            logger.log(&format!("✅ PROGRESS Step '{}' already completed, skipping", step.id))?;
+            continue;
         }
 
         logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
@@ -191,36 +256,29 @@ pub fn run(
     Ok(None)
 }
 
-fn check_scripts(
+fn check_scripts_before_run(
     steps: &[Step],
-    script_checker: &mut dyn ScriptChecker,
-    skip_if_shell_unavailable: bool,
+    script_checker: &mut dyn ScriptChecker
 ) -> Result<()> {
+
+    let skip_if_shell_unavailable = true;
+    let check_step_script = |step: &Step, script_name: &str, script: &Option<Script>, script_checker: &mut dyn ScriptChecker| -> Result<()> {
+        if let Some(script) = script {
+            script_checker
+                .check_script(script, skip_if_shell_unavailable)
+                .context(format!(
+                    "Failed to check {script_name} in {}, step '{}'",
+                    step.source_file, step.id
+                ))?;
+        }
+        Ok(())
+    };
+
     for step in steps.iter() {
-        if let Some(script) = &step.when_script {
-            script_checker
-                .check_script(script, skip_if_shell_unavailable)
-                .context(format!(
-                    "Failed to check when-script in {}, step '{}'",
-                    step.source_file, step.id
-                ))?;
-        }
-        if let Some(script) = &step.pre_script {
-            script_checker
-                .check_script(script, skip_if_shell_unavailable)
-                .context(format!(
-                    "Failed to check pre-script in {}, step '{}'",
-                    step.source_file, step.id
-                ))?;
-        }
-        if let Some(script) = &step.script {
-            script_checker
-                .check_script(script, skip_if_shell_unavailable)
-                .context(format!(
-                    "Failed to check script in {}, step '{}'",
-                    step.source_file, step.id
-                ))?;
-        }
+        check_step_script(step, "when-script", &step.when_script, script_checker)?;
+        check_step_script(step, "pre-script", &step.pre_script, script_checker)?;
+        check_step_script(step, "script", &step.script, script_checker)?;
+        check_step_script(step, "check-script", &step.check_script, script_checker)?;
     }
     Ok(())
 }
@@ -230,114 +288,31 @@ fn run_step(
     script_checker: &mut dyn ScriptChecker,
     logger: &mut Logger<impl Write>,
 ) -> Result<()> {
-    let step_dir = Path::new(&step.source_file).parent().unwrap();
+    let step_dir = step.directory();
 
-    if let Some(pre_script) = &step.pre_script {
-        logger.log("⚙️ PROGRESS Running pre-script...")?;
-        run_script(pre_script, step_dir, script_checker, logger.out).context(format!(
-            "Failed to run pre_script in file {} step '{}'",
-            step.source_file, step.id
-        ))?;
-    }
-    if !step.packages.is_empty() {
-        install_packages(&step.packages, &step.package_manager, logger)?;
-    }
-    if let Some(script) = &step.script {
-        logger.log("⚙️ PROGRESS Running script...")?;
-        run_script(script, step_dir, script_checker, logger.out).context(format!(
-            "Failed to run script in file {} step '{}'",
-            step.source_file, step.id
-        ))?;
-    }
-    Ok(())
-}
-
-fn run_script(
-    script: &Script,
-    dir: &Path,
-    script_checker: &mut dyn ScriptChecker,
-    out: &mut impl Write,
-) -> Result<()> {
-    if !script_checker.is_checked(script) {
-        script_checker.check_script(script, false)?;
-    }
-
-    let (cmd, args) = match script.shell {
-        Shell::Bash => (Shell::Bash.get_command(), vec!["-c", &script.code]),
-        Shell::PowerShell | Shell::PowerShellCore => (
-            script.shell.get_command(),
-            vec!["-NoProfile", "-Command", &script.code],
-        ),
+    let mut run_step_script = |name: &str, script: &Option<Script>, logger: &mut Logger<_>| -> Result<()> {
+        if let Some(script) = script {
+        logger.log(&format!("⚙️ PROGRESS Running {name}..."))?;
+            match run_script(&script, step_dir, Some(script_checker), logger.out) {
+                Ok(ScriptResult::Success) => return Ok(()),
+                Ok(ScriptResult::NotZeroExitStatus(code)) => {
+                    bail!("failed to run {name}: status code {code}")
+                }
+                Err(e) => bail!("failed to run {name}: {e}"),
+            }
+        }
+        Ok(())
     };
 
-    let mut child = Command::new(cmd)
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .current_dir(dir)
-        .spawn()?;
+    run_step_script("pre-script", &step.pre_script, logger)?;
 
-    let mut stdout = child.stdout.take().unwrap();
-    let mut stderr = child.stderr.take().unwrap();
-
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
-
-    // read by bytes, not lines, because some programs wait for output on the same line ("Enter
-    // password: <input here>") or display progress bars
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match stdout.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let _ = tx.send(buf[..n].to_vec());
-                    }
-                    Err(err) => {
-                        eprintln!("error reading child stdout: {err}");
-                        break;
-                    }
-                }
-            }
-        });
+    if !step.packages.is_empty() {
+        install_packages(&step.packages.iter().map(|p| p.name.clone()).collect::<Vec<String>>(),
+                         &step.package_manager, logger)?;
     }
 
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match stderr.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let _ = tx.send(buf[..n].to_vec());
-                    }
-                    Err(err) => {
-                        eprintln!("error reading child stderr: {err}");
-                        break;
-                    }
-                }
-            }
-        });
-    }
-
-    drop(tx);
-
-    for chunk in rx {
-        let s = String::from_utf8_lossy(&chunk);
-        write!(out, "{s}")?;
-        out.flush()?;
-    }
-
-    let status = child.wait()?;
-    if !status.success() {
-        match status.code() {
-            Some(code) => bail!("{} script failed with code {}", cmd, code),
-            None => bail!("{} script terminated by signal", cmd),
-        }
-    }
+    run_step_script("script", &step.script, logger)?;
+    run_step_script("check-script", &step.check_script, logger)?;
     Ok(())
 }
 
@@ -348,7 +323,9 @@ mod tests {
     };
 
     use super::*;
-    use std::{collections::HashSet, fs, io};
+    use std::{collections::HashSet, env, fs, io};
+    use rstest::rstest;
+    use serial_test::serial;
     use tempfile::tempdir;
     use crate::runner::script_checker::DefaultScriptChecker;
     use crate::system::pkg::PackageSource;
@@ -414,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_dry_warns_abount_unavailable_shell() -> Result<()> {
+    fn test_run_dry_warns_about_unavailable_shell() -> Result<()> {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
@@ -459,7 +436,8 @@ mod tests {
     }
 
     #[test]
-    fn test_run_dry_warns_abount_unavailable_package_manager() -> Result<()> {
+    #[serial]
+    fn test_run_dry_warns_about_unavailable_package_manager() -> Result<()> {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
@@ -494,8 +472,10 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_run_dry_when_scripts() -> Result<()> {
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    fn test_run_dry_when_script_exit_nonzero_skips_step(#[case] exit_code: i32) -> Result<()> {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
@@ -503,7 +483,7 @@ mod tests {
             id: "step".to_string(),
             when_script: Some(config::Script {
                 shell: Some(Shell::Bash),
-                code: "exit 1".to_string(),
+                code: format!("exit {exit_code}").to_string(),
             }),
             source_file: "/file.yaml".to_string(),
             ..Default::default()
@@ -527,6 +507,111 @@ mod tests {
         Ok(())
     }
 
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    fn test_run_when_script_exit_nonzero_skips_step(#[case] exit_code: i32) -> Result<()> {
+        let mut output = Vec::new();
+
+        let steps = vec![config::Step {
+            id: "step".to_string(),
+            when_script: Some(config::Script {
+                shell: Some(Shell::Bash),
+                code: format!("exit {exit_code}").to_string(),
+            }),
+            source_file: "/file.yaml".to_string(),
+            ..Default::default()
+        }];
+
+        run(
+            &steps.iter().collect::<Vec<&config::Step>>(),
+            &RunParameters {
+                dry_run: false,
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
+            },
+            &FakeStateSaver,
+            &mut DefaultScriptChecker::new(),
+            &mut output,
+        )?;
+
+        let output = String::from_utf8_lossy(&output);
+
+        assert!(output.contains(&format!("skipped due to when-script returning exit code {exit_code}")), "{}", output);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_run_failed_check_after_step() -> Result<()> {
+        let mut output = Vec::new();
+
+        let steps = vec![config::Step {
+            id: "step".to_string(),
+            script: Some(config::Script {
+                shell: Some(Shell::Bash),
+                code: "exit 0".to_string(),
+            }),
+            check_script: Some(config::Script {
+                shell: Some(Shell::Bash),
+                code: "exit 1".to_string(),
+            }),
+            source_file: "/file.yaml".to_string(),
+            ..Default::default()
+        }];
+
+        let res = run(
+            &steps.iter().collect::<Vec<&config::Step>>(),
+            &RunParameters {
+                dry_run: false,
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
+            },
+            &FakeStateSaver,
+            &mut DefaultScriptChecker::new(),
+            &mut output,
+        );
+
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err().to_string();
+        assert!(err_msg.contains("failed to run check-script: status code 1"), "{}", err_msg);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_dry_when_script_exit_zero_runs_step() -> Result<()> {
+        let mut output = Vec::new();
+        mock_available_shells(HashSet::from_iter([Shell::Bash]));
+
+        let steps = vec![config::Step {
+            id: "step".to_string(),
+            when_script: Some(config::Script {
+                shell: Some(Shell::Bash),
+                code: "exit 0".to_string(),
+            }),
+            source_file: "/file.yaml".to_string(),
+            ..Default::default()
+        }];
+
+        let plan = run(
+            &steps.iter().collect::<Vec<&config::Step>>(),
+            &RunParameters {
+                dry_run: true,
+                source_file_path: Path::new("/file.yaml").to_path_buf(),
+                interactive: false,
+            },
+            &FakeStateSaver,
+            &mut DefaultScriptChecker::new(),
+            &mut output,
+        )?
+        .unwrap();
+
+        assert!(!plan.steps_to_run.is_empty());
+        assert!(plan.steps_skipped_by_when.is_empty());
+        Ok(())
+    }
+
     #[test]
     fn test_run_script_doesnt_check_script_again() -> Result<()> {
         mock_available_shells(HashSet::from_iter([Shell::Bash]));
@@ -541,15 +626,119 @@ mod tests {
             code: "echo \"what\"".to_string(),
         };
 
-        run_script(&script, Path::new("/"), &mut mock_checker, &mut io::sink())?;
+        run_script(&script, Path::new("/"), Some(&mut mock_checker), &mut io::sink())?;
 
         assert_eq!(mock_checker.check_value_calls, 0);
 
         mock_checker.check_value_calls = 0;
         mock_checker.is_checked_value = false;
-        run_script(&script, Path::new("/"), &mut mock_checker, &mut io::sink())?;
+        run_script(&script, Path::new("/"), Some(&mut mock_checker), &mut io::sink())?;
 
         assert_eq!(mock_checker.check_value_calls, 1);
+        Ok(())
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(2)]
+    #[serial]
+    fn test_is_completed_check_script_nonzero_exit_returns_failed(#[case] exit_code: i32) -> Result<()> {
+        unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;"); }
+        let step = Step {
+            id: "test".to_string(),
+            check_script: Some(Script {
+                shell: Shell::Bash,
+                code: format!("exit {exit_code}"),
+            }),
+            source_file: "/test.yaml".to_string(),
+            package_manager: PackageManager::Apt,
+            packages: vec![],
+            when_script: None,
+            pre_script: None,
+            script: None,
+        };
+
+        let result = step.is_completed(None)?;
+        unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+
+        assert_eq!(result, StepCompletedResult::FailedCheckScript);
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_completed_pre_script_doesnt_require_check_script() -> Result<()> {
+        unsafe { env::set_var("MEPRIS_IS_INSTALLED_RESULT", "0"); }
+        unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;"); }
+        
+        let step = Step {
+            id: "test".to_string(),
+            pre_script: Some(Script {
+                shell: Shell::Bash,
+                code: "exit 0".to_string(),
+            }),
+            source_file: "/test.yaml".to_string(),
+            package_manager: PackageManager::Apt,
+            packages: vec![Package{name: "pkg".to_string(), used_alias: false}],
+            when_script: None,
+            script: None,
+            check_script: None,
+        };
+
+        let result = step.is_completed(None)?;
+
+        unsafe { env::remove_var("MEPRIS_IS_INSTALLED_RESULT"); }
+        unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+
+        assert_eq!(result, StepCompletedResult::Completed);
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_completed_script_requires_check_script() -> Result<()> {
+        unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;"); }
+        let step = Step {
+            id: "test".to_string(),
+            pre_script: None,
+            source_file: "/test.yaml".to_string(),
+            package_manager: PackageManager::Apt,
+            packages: vec![],
+            when_script: None,
+            script: Some(Script {
+                shell: Shell::Bash,
+                code: "exit 0".to_string(),
+            }),
+            check_script: None,
+        };
+
+        let result = step.is_completed(None)?;
+        unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+
+        assert_eq!(result, StepCompletedResult::HasScriptWithoutCheck);
+        Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_completed_script_package_manager_not_installed() -> Result<()> {
+        let step = Step {
+            id: "test".to_string(),
+            pre_script: None,
+            source_file: "/test.yaml".to_string(),
+            package_manager: PackageManager::Choco,
+            packages: vec![Package{name: "pkg".to_string(), used_alias: false}],
+            when_script: None,
+            script: Some(Script {
+                shell: Shell::Bash,
+                code: "exit 0".to_string(),
+            }),
+            check_script: None,
+        };
+
+        let result = step.is_completed(None)?;
+
+        assert_eq!(result, StepCompletedResult::NotInstalledPackageManager);
         Ok(())
     }
 }

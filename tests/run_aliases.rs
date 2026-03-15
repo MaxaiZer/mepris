@@ -121,7 +121,7 @@ fn test_dry_run_local_aliases_wrong_file_name() {
         r#"
          steps:
            - id: "step1"
-             packages: ["git"]
+             packages: ["pkgname"]
          "#,
     )
     .expect("Failed to write file.yaml");
@@ -130,7 +130,7 @@ fn test_dry_run_local_aliases_wrong_file_name() {
         &aliases_path,
         r#"
          git:
-           apt: git-local
+           apt: pkgname-local
          "#,
     )
     .expect("Failed to write aliases.yaml");
@@ -151,8 +151,8 @@ fn test_dry_run_local_aliases_wrong_file_name() {
 
     assert!(res.is_ok());
     assert!(
-        output.contains("git (apt-get)"),
-        "output doesn't contain 'git (apt-get)': {output}"
+        output.contains("pkgname (apt-get)"),
+        "output doesn't contain 'pkgname (apt-get)': {output}"
     );
 }
 

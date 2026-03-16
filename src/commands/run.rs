@@ -149,11 +149,20 @@ fn print_info(
         }
 
         if step.step_completed_result == StepCompletedResult::HasScriptWithoutCheck {
-            writeln!(
-                out,
-                "  ❔ Step {}: all packages installed, but no check-script; step will still run",
-                step_id.cyan()
-            )?;
+            if step.packages_to_install.is_empty() {
+                writeln!(
+                    out,
+                    "  ❔ Step {}: no check-script; step would run",
+                    step_id.cyan()
+                )?;
+            } else {
+                writeln!(
+                    out,
+                    "  ❔ Step {}: all packages installed, but no check-script; step would still run",
+                    step_id.cyan()
+                )?;
+            }
+
             continue;
         }
 

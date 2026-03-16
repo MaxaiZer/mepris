@@ -149,6 +149,13 @@ fn print_step(
         StepCompletedResult::FailedCheckScript => {
             writeln!(out, "status: {}", "check-script failed".yellow())?;
         }
+        StepCompletedResult::HasScriptWithoutCheck if step.packages.is_empty() => {
+            writeln!(
+                out,
+                "status: {}",
+                "completion cannot be verified without a check-script".yellow()
+            )?;
+        }
         StepCompletedResult::HasScriptWithoutCheck => {
             writeln!(out, "status: {}", "all packages are installed, but completion cannot be verified without a check-script".yellow())?;
         }

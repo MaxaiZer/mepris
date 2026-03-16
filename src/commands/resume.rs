@@ -2,9 +2,9 @@ use std::io::Write;
 
 use anyhow::Result;
 
+use super::{run, utils::RunInfo};
 use crate::cli::{ResumeArgs, RunArgs};
 use crate::runner::state;
-use super::{run, utils::RunInfo};
 
 pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
     let state: RunInfo = match state::get() {

@@ -1,11 +1,11 @@
-use expr::Expr;
-use serde::{
-    de::{self, value::StringDeserializer, IntoDeserializer}, Deserialize,
-    Deserializer,
-};
-use strum::IntoEnumIterator;
 use crate::system::pkg::{PackageManager, PackageSource, Repository};
 use crate::system::shell::Shell;
+use expr::Expr;
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, IntoDeserializer, value::StringDeserializer},
+};
+use strum::IntoEnumIterator;
 
 pub mod alias;
 pub mod expr;
@@ -21,10 +21,9 @@ pub struct Defaults {
 
 impl Defaults {
     pub fn merge(inherited: &Option<Defaults>, overrides: &Option<Defaults>) -> Self {
-        
         let inherited = inherited.as_ref();
         let overrides = overrides.as_ref();
-        
+
         Defaults {
             windows_package_manager: overrides
                 .and_then(|overrides| overrides.windows_package_manager.clone())
@@ -105,11 +104,11 @@ impl<'de> Deserialize<'de> for Script {
     {
         let helper = ScriptDef::deserialize(deserializer)?;
         Ok(match helper {
-            ScriptDef::Short(code) => Script {
-                shell: None,
+            ScriptDef::Short(code) => Script { shell: None, code },
+            ScriptDef::Full { shell, code } => Script {
+                shell: Some(shell),
                 code,
             },
-            ScriptDef::Full { shell, code } => Script { shell: Some(shell), code },
         })
     }
 }

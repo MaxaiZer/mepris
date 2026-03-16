@@ -1,12 +1,12 @@
+use crate::runner::Script;
+use crate::runner::script_checker::ScriptChecker;
+use crate::system::shell::Shell;
+use anyhow::bail;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use anyhow::bail;
-use crate::runner::Script;
-use crate::runner::script_checker::ScriptChecker;
-use crate::system::shell::Shell;
 
 pub enum ScriptResult {
     Success,
@@ -19,7 +19,6 @@ pub fn run_script(
     script_checker: Option<&mut dyn ScriptChecker>,
     out: &mut impl Write,
 ) -> anyhow::Result<ScriptResult> {
-    
     if let Some(script_checker) = script_checker {
         if !script_checker.is_checked(script) {
             script_checker.check_script(script, false)?;
@@ -118,7 +117,7 @@ pub fn run_noninteractive_script(
     get_script_result(&status)
 }
 
-fn get_script_cmd(script: &Script) ->(&str, Vec<&str>) {
+fn get_script_cmd(script: &Script) -> (&str, Vec<&str>) {
     match script.shell {
         Shell::Bash => (Shell::Bash.get_command(), vec!["-c", &*script.code]),
         Shell::PowerShell | Shell::PowerShellCore => (

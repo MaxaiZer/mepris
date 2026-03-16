@@ -1,4 +1,4 @@
-use crate::runner::script::{run_script, ScriptResult};
+use crate::runner::script::{ScriptResult, run_script};
 use crate::runner::{Step, StepCompletedResult};
 use crate::system::shell::is_shell_available;
 use anyhow::bail;

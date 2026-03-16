@@ -1,19 +1,22 @@
-use std::io::Write;
-use std::path::Path;
+use super::utils::{
+    RunStateSaver, check_env, check_unique_id, filter_by_os, filter_by_tags,
+    filter_steps_start_with_id, load_env,
+};
+use crate::config::parser::{self};
+use crate::runner::StepCompletedResult;
+use crate::runner::script_checker::DefaultScriptChecker;
 use crate::{
     cli::RunArgs,
     commands::utils::filter_by_ids,
     config::Step,
     helpers,
-    system::os_info::{OsInfo, OS_INFO},
     runner::{self, dry},
+    system::os_info::{OS_INFO, OsInfo},
 };
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use colored::Colorize;
-use crate::config::parser::{self};
-use crate::runner::script_checker::DefaultScriptChecker;
-use crate::runner::StepCompletedResult;
-use super::utils::{check_env, check_unique_id, filter_by_os, filter_by_tags, filter_steps_start_with_id, load_env, RunStateSaver};
+use std::io::Write;
+use std::path::Path;
 
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     let state_saver = RunStateSaver {
@@ -26,12 +29,13 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     };
     let mut script_checker = DefaultScriptChecker::new();
 
-    let steps = parser::parse(&args.file)?;
+    let mut steps = parser::parse(&args.file)?;
     if steps.is_empty() {
         bail!("The file doesn't contain any steps");
     }
 
     check_unique_id(&steps)?;
+    //steps = toposort_steps(&mut steps)?;
 
     let filter_result = filter_steps(&steps, &OS_INFO, &args)?;
 
@@ -125,8 +129,10 @@ fn print_info(
     let mut previous_source_file = "";
 
     for step in &dry_run_plan.steps_to_run {
-
-        let cur_source_file = Path::new(&step.source_file).file_name().and_then(|s| s.to_str()).unwrap();
+        let cur_source_file = Path::new(&step.source_file)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap();
         if cur_source_file != previous_source_file {
             if previous_source_file != "" {
                 writeln!(out)?;
@@ -143,7 +149,11 @@ fn print_info(
         }
 
         if step.step_completed_result == StepCompletedResult::HasScriptWithoutCheck {
-            writeln!(out, "  ❔ Step {}: all packages installed, but no check-script; step will still run", step_id.cyan())?;
+            writeln!(
+                out,
+                "  ❔ Step {}: all packages installed, but no check-script; step will still run",
+                step_id.cyan()
+            )?;
             continue;
         }
 
@@ -151,7 +161,8 @@ fn print_info(
 
         if !step.packages_to_install.is_empty() {
             let get_pkgs = |installed: bool| {
-                return step.packages_to_install
+                return step
+                    .packages_to_install
                     .iter()
                     .filter(|p| p.installed == installed)
                     .map(|p| p.to_string())
@@ -162,21 +173,27 @@ fn print_info(
             let mut not_installed_packages = get_pkgs(false);
 
             if !installed_packages.is_empty() {
-                installed_packages = "Already installed ".to_owned().green().to_string() + &installed_packages;
+                installed_packages =
+                    "Already installed ".to_owned().green().to_string() + &installed_packages;
                 if !not_installed_packages.is_empty() {
                     installed_packages = installed_packages + ",";
                 }
             }
             if !not_installed_packages.is_empty() {
-                not_installed_packages = "Would install packages ".to_owned().yellow().to_string() + &not_installed_packages;
+                not_installed_packages = "Would install packages ".to_owned().yellow().to_string()
+                    + &not_installed_packages;
                 if !installed_packages.is_empty() {
-                    not_installed_packages =  " ".to_owned() + &not_installed_packages.replace("Would", "would");
+                    not_installed_packages =
+                        " ".to_owned() + &not_installed_packages.replace("Would", "would");
                 }
             }
 
             let manager_info = &step.package_manager.as_ref().unwrap();
 
-            let info = format!("  📦 {}{} ({})", installed_packages, not_installed_packages, manager_info.name);
+            let info = format!(
+                "  📦 {}{} ({})",
+                installed_packages, not_installed_packages, manager_info.name
+            );
             writeln!(out, "{}", info)?;
 
             if !manager_info.installed {
@@ -202,16 +219,28 @@ fn print_info(
         writeln!(out, "❌ No steps would be run")?;
     }
 
-    if !excluded_by_tags.is_empty() || !excluded_by_os.is_empty() || !skipped.is_empty() || !dry_run_plan.steps_to_run.is_empty() {
+    if !excluded_by_tags.is_empty()
+        || !excluded_by_os.is_empty()
+        || !skipped.is_empty()
+        || !dry_run_plan.steps_to_run.is_empty()
+    {
         writeln!(out)?;
     }
 
     if !excluded_by_tags.is_empty() {
-        writeln!(out, "⏭️ Skipped steps due to tag mismatch: {}", to_ids(excluded_by_tags))?;
+        writeln!(
+            out,
+            "⏭️ Skipped steps due to tag mismatch: {}",
+            to_ids(excluded_by_tags)
+        )?;
     }
 
     if !excluded_by_os.is_empty() {
-        writeln!(out, "⏭️ Skipped steps due to OS mismatch: {}", to_ids(excluded_by_os))?;
+        writeln!(
+            out,
+            "⏭️ Skipped steps due to OS mismatch: {}",
+            to_ids(excluded_by_os)
+        )?;
     }
 
     if !skipped.is_empty() {
@@ -220,7 +249,7 @@ fn print_info(
 
     if !dry_run_plan.steps_skipped_by_when.is_empty() {
         writeln!(
-            out, 
+            out,
             "⏭️ Skipped steps due to failed when-script: {}",
             dry_run_plan.steps_skipped_by_when.join(", ")
         )?;

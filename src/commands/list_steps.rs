@@ -1,19 +1,19 @@
 use std::{collections::HashSet, io::Write, path::Path};
 
+use super::utils::{check_unique_id, filter_by_os};
+use crate::config::parser;
 use crate::{
     cli::ListStepsArgs,
     commands::utils::filter_by_tags,
-    config::{expr::eval_os_expr, Step},
+    config::{Step, expr::eval_os_expr},
     system::os_info::OS_INFO,
 };
 use anyhow::Result;
 use comfy_table::{
-    modifiers::{UTF8_ROUND_CORNERS, UTF8_SOLID_INNER_BORDERS}, presets::UTF8_FULL,
-    ContentArrangement,
-    Table,
+    ContentArrangement, Table,
+    modifiers::{UTF8_ROUND_CORNERS, UTF8_SOLID_INNER_BORDERS},
+    presets::UTF8_FULL,
 };
-use crate::config::parser;
-use super::utils::{check_unique_id, filter_by_os};
 
 pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
     let steps = parser::parse(&args.file)?;

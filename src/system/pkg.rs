@@ -1,6 +1,6 @@
-use std::process::{Command, Stdio};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde::Deserialize;
+use std::process::{Command, Stdio};
 use strum_macros::{Display, EnumIter, EnumString};
 
 #[derive(Debug, Clone)]
@@ -75,11 +75,10 @@ impl PackageManager {
             Self::Scoop => "scoop",
             Self::Choco => "choco",
             Self::Cargo => "cargo",
-            Self::Npm => "npm"
+            Self::Npm => "npm",
         }
     }
     pub fn install(&self, pkgs: &[String]) -> anyhow::Result<()> {
-
         if let Ok(cmd) = std::env::var("MEPRIS_INSTALL_COMMAND") {
             let parts = shell_words::split(&cmd)?;
             let (program, args) = parts.split_first().unwrap();
@@ -146,7 +145,7 @@ impl PackageManager {
             Self::Scoop => vec![build_cmd("scoop.cmd", &["install"], pkgs)],
             Self::Choco => vec![build_cmd("choco", &["install", "-y"], pkgs)],
             Self::Cargo => vec![build_cmd("cargo", &["install"], pkgs)],
-            Self::Npm => vec![build_cmd("npm", &["i", "-g"], pkgs)]
+            Self::Npm => vec![build_cmd("npm", &["i", "-g"], pkgs)],
         };
 
         for cmd in &commands {
@@ -166,7 +165,6 @@ impl PackageManager {
         Ok(())
     }
     pub fn is_installed(&self, pkg: &str) -> anyhow::Result<bool> {
-        
         if let Ok(res) = std::env::var("MEPRIS_IS_INSTALLED_RESULT") {
             return Ok(res == "0");
         }
@@ -190,7 +188,11 @@ impl PackageManager {
             },
             Self::Brew => CommandSpec {
                 bin: "brew".to_string(),
-                args: vec!["list".to_string(), "--versions".to_string(), pkg.to_string()],
+                args: vec![
+                    "list".to_string(),
+                    "--versions".to_string(),
+                    pkg.to_string(),
+                ],
             },
             Self::Winget => CommandSpec {
                 bin: "winget".to_string(),
@@ -202,7 +204,11 @@ impl PackageManager {
             },
             Self::Choco => CommandSpec {
                 bin: "choco".to_string(),
-                args: vec!["list".to_string(), "--local-only".to_string(), pkg.to_string()],
+                args: vec![
+                    "list".to_string(),
+                    "--local-only".to_string(),
+                    pkg.to_string(),
+                ],
             },
             Self::Cargo => CommandSpec {
                 bin: "cargo".to_string(),
@@ -210,8 +216,13 @@ impl PackageManager {
             },
             Self::Npm => CommandSpec {
                 bin: "npm".to_string(),
-                args: vec!["list".to_string(), "--depth=0".to_string(), "-g".to_string(), pkg.to_string()],
-            }
+                args: vec![
+                    "list".to_string(),
+                    "--depth=0".to_string(),
+                    "-g".to_string(),
+                    pkg.to_string(),
+                ],
+            },
         };
 
         let output = Command::new(&cmd.bin)
@@ -222,24 +233,31 @@ impl PackageManager {
         let out = String::from_utf8_lossy(&output.stdout);
 
         match self {
-            PackageManager::Pacman | PackageManager::Yay | PackageManager::Paru
-            | PackageManager::Dnf | PackageManager::Zypper
-            | PackageManager::Flatpak | PackageManager::Npm => Ok(output.status.success()),
+            PackageManager::Pacman
+            | PackageManager::Yay
+            | PackageManager::Paru
+            | PackageManager::Dnf
+            | PackageManager::Zypper
+            | PackageManager::Flatpak
+            | PackageManager::Npm => Ok(output.status.success()),
 
             PackageManager::Apt => {
                 Ok(output.status.success() && out.lines().any(|line| line.starts_with("ii")))
             }
 
-            PackageManager::Scoop => { //first line is "installed apps matching <pkg_name>:" + scoop uses SUBSTRING MATCH. package name is in first column
-                Ok(out.lines()
+            PackageManager::Scoop => {
+                //first line is "installed apps matching <pkg_name>:" + scoop uses SUBSTRING MATCH. package name is in first column
+                Ok(out
+                    .lines()
                     .skip(1)
                     .filter_map(|line| line.split_whitespace().next())
                     .any(|name| name == pkg))
             }
 
-            PackageManager::Winget | PackageManager::Choco
-            | PackageManager::Brew | PackageManager::Cargo
-            => Ok(out.contains(pkg))
+            PackageManager::Winget
+            | PackageManager::Choco
+            | PackageManager::Brew
+            | PackageManager::Cargo => Ok(out.contains(pkg)),
         }
     }
 }

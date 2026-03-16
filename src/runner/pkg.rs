@@ -1,10 +1,10 @@
-use std::io::Write;
-use anyhow::{bail};
-use which::which;
-use crate::config::{Step};
-use crate::system::os_info::{Platform, DEFAULT_PACKAGE_MANAGER, OS_INFO};
+use crate::config::Step;
 use crate::runner::logger::Logger;
+use crate::system::os_info::{DEFAULT_PACKAGE_MANAGER, OS_INFO, Platform};
 use crate::system::pkg::PackageManager;
+use anyhow::bail;
+use std::io::Write;
+use which::which;
 
 pub fn resolve_step_package_manager(step: &Step) -> PackageManager {
     if let Some(source) = &step.package_source {
@@ -36,7 +36,6 @@ pub fn install_packages(
     manager: &PackageManager,
     logger: &mut Logger<impl Write>,
 ) -> anyhow::Result<()> {
-    
     if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && which(manager.command()).is_err() {
         bail!("Package manager {} not found", manager.command());
     }

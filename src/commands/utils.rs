@@ -3,16 +3,16 @@ use std::{
     path::Path,
 };
 
+use crate::runner::state;
 use crate::{
     config::{
-        expr::{eval_os_expr, eval_tags_expr, parse},
         Step,
+        expr::{eval_os_expr, eval_tags_expr, parse},
     },
-    system::os_info::OsInfo,
     runner::{self, RunState},
+    system::os_info::OsInfo,
 };
-use anyhow::{bail, Context, Result};
-use crate::runner::state;
+use anyhow::{Context, Result, bail};
 
 pub struct RunStateSaver {
     pub file: String,
@@ -116,8 +116,7 @@ pub struct FilterResult<'a> {
 }
 
 pub fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> Result<FilterResult<'a>> {
-    let map: std::collections::HashMap<&str, &Step> =
-        steps.iter().copied().map(|s| (s.id.as_str(), s)).collect();
+    let map: HashMap<&str, &Step> = steps.iter().copied().map(|s| (s.id.as_str(), s)).collect();
 
     let unknown_steps: Vec<_> = ids
         .iter()
@@ -126,7 +125,7 @@ pub fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> Result<FilterRes
         .collect();
 
     if !unknown_steps.is_empty() {
-        anyhow::bail!("Unknown steps: {}", unknown_steps.join(", "));
+        bail!("Unknown steps: {}", unknown_steps.join(", "));
     }
 
     Ok(FilterResult {

@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 use std::{io::Write, process::Command};
 
-use anyhow::{Context, Result, bail};
-use blake3::Hasher;
-use tempfile::NamedTempFile;
 use crate::runner::Script;
 use crate::system::shell::Shell;
 use crate::system::shell::is_shell_available;
+use anyhow::{Context, Result, bail};
+use blake3::Hasher;
+use tempfile::NamedTempFile;
 
 pub trait ScriptChecker {
     fn check_script(&mut self, script: &Script, skip_if_shell_unavailable: bool) -> Result<()>;

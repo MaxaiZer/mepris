@@ -1,34 +1,32 @@
-use std::{
-    io::{Write},
-    path::{Path, PathBuf},
-};
 use std::cmp::PartialEq;
 use std::collections::HashSet;
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
 
+pub(crate) mod dry;
 mod interactive;
 mod logger;
-pub(crate) mod dry;
 mod pkg;
+mod script;
 pub mod script_checker;
 pub mod state;
-mod script;
 
-use crate::{config, config::{
-    alias::load_aliases,
-}};
+use crate::{config, config::alias::load_aliases};
 
-use anyhow::{bail, Context, Result};
+use crate::config::alias::PackageAliases;
+use crate::runner::pkg::{install_packages, resolve_step_package_manager};
+use crate::runner::script::{ScriptResult, run_noninteractive_script, run_script};
+use crate::system::os_info::{OS_INFO, Platform};
+use crate::system::pkg::PackageManager;
+use crate::system::shell::Shell;
+use anyhow::{Context, Result, bail};
 use colored::Colorize;
-use which::which;
 use interactive::ask_confirmation;
 use logger::Logger;
 use script_checker::ScriptChecker;
-use crate::config::alias::PackageAliases;
-use crate::system::os_info::{Platform, OS_INFO};
-use crate::runner::pkg::{install_packages, resolve_step_package_manager};
-use crate::runner::script::{run_noninteractive_script, run_script, ScriptResult};
-use crate::system::pkg::PackageManager;
-use crate::system::shell::Shell;
+use which::which;
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
@@ -77,11 +75,8 @@ pub struct Step {
 }
 
 impl Step {
-
     fn from(config_step: &config::Step, aliases: &PackageAliases) -> Self {
-
         let resolve_shell = |script: &Option<config::Script>| -> Option<Script> {
-
             if script.is_none() {
                 return None;
             }
@@ -92,24 +87,35 @@ impl Step {
             if script.shell.is_some() {
                 res_shell = script.shell.as_ref().unwrap().clone();
             } else {
+                let default_shell = |get_shell: fn(&config::Defaults) -> Option<Shell>| {
+                    config_step
+                        .defaults
+                        .as_ref()
+                        .and_then(get_shell)
+                        .unwrap_or_else(Shell::default_for_current_os)
+                };
+
                 res_shell = match OS_INFO.platform {
-                    Platform::Linux => config_step.defaults.as_ref().and_then(|d| d.linux_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
-                    Platform::MacOS => config_step.defaults.as_ref().and_then(|d| d.macos_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
-                    Platform::Windows => config_step.defaults.as_ref().and_then(|d| d.windows_shell.clone()).unwrap_or_else(Shell::default_for_current_os),
+                    Platform::Linux => default_shell(|d| d.linux_shell.clone()),
+                    Platform::MacOS => default_shell(|d| d.macos_shell.clone()),
+                    Platform::Windows => default_shell(|d| d.windows_shell.clone()),
                 }
             }
 
             Some(Script {
                 shell: res_shell,
-                code: script.code.clone()
+                code: script.code.clone(),
             })
         };
 
-        let pkg_manager =  resolve_step_package_manager(&config_step);
+        let pkg_manager = resolve_step_package_manager(&config_step);
 
         let mut packages: Vec<Package> = Vec::new();
         for cfg_pkg in &config_step.packages {
-            let mut resolved_pkg = Package{name: aliases.resolve_name(cfg_pkg, &pkg_manager), used_alias: false};
+            let mut resolved_pkg = Package {
+                name: aliases.resolve_name(cfg_pkg, &pkg_manager),
+                used_alias: false,
+            };
             resolved_pkg.used_alias = cfg_pkg != &resolved_pkg.name;
             packages.push(resolved_pkg);
         }
@@ -132,18 +138,22 @@ impl Step {
             self.pre_script.as_ref(),
             self.script.as_ref(),
         ]
-            .iter()
-            .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
-            .collect()
+        .iter()
+        .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
+        .collect()
     }
 
     pub fn directory(&self) -> &Path {
         Path::new(&self.source_file).parent().unwrap()
     }
 
-    pub fn is_completed(&self, script_checker: Option<&mut dyn ScriptChecker>) -> Result<StepCompletedResult> {
-
-        if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && which(self.package_manager.command()).is_err() {
+    pub fn is_completed(
+        &self,
+        script_checker: Option<&mut dyn ScriptChecker>,
+    ) -> Result<StepCompletedResult> {
+        if std::env::var("MEPRIS_INSTALL_COMMAND").is_err()
+            && which(self.package_manager.command()).is_err()
+        {
             return Ok(StepCompletedResult::NotInstalledPackageManager);
         }
 
@@ -155,14 +165,18 @@ impl Step {
         }
 
         if !not_installed_pkgs.is_empty() {
-            return Ok(StepCompletedResult::NotInstalledPackages(not_installed_pkgs));
+            return Ok(StepCompletedResult::NotInstalledPackages(
+                not_installed_pkgs,
+            ));
         }
 
         if let Some(check_script) = self.check_script.as_ref() {
             let res = run_noninteractive_script(check_script, self.directory(), script_checker)?;
             match res {
-                ScriptResult::NotZeroExitStatus(_) => return Ok(StepCompletedResult::FailedCheckScript),
-                ScriptResult::Success => {},
+                ScriptResult::NotZeroExitStatus(_) => {
+                    return Ok(StepCompletedResult::FailedCheckScript);
+                }
+                ScriptResult::Success => {}
             }
         } else if self.script.is_some() {
             return Ok(StepCompletedResult::HasScriptWithoutCheck);
@@ -179,7 +193,6 @@ pub fn run(
     script_checker: &mut dyn ScriptChecker,
     out: &mut impl Write,
 ) -> Result<Option<dry::RunPlan>> {
-
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
     let mut steps: Vec<Step> = steps.iter().map(|s| Step::from(s, &aliases)).collect();
     check_scripts_before_run(&steps, script_checker)?;
@@ -232,7 +245,10 @@ pub fn run(
                 interactive::Decision::LeaveInteractiveMode => interactive = false,
             }
         } else if completion == StepCompletedResult::Completed {
-            logger.log(&format!("✅ PROGRESS Step '{}' already completed, skipping", step.id))?;
+            logger.log(&format!(
+                "✅ PROGRESS Step '{}' already completed, skipping",
+                step.id
+            ))?;
             continue;
         }
 
@@ -256,13 +272,13 @@ pub fn run(
     Ok(None)
 }
 
-fn check_scripts_before_run(
-    steps: &[Step],
-    script_checker: &mut dyn ScriptChecker
-) -> Result<()> {
-
+fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptChecker) -> Result<()> {
     let skip_if_shell_unavailable = true;
-    let check_step_script = |step: &Step, script_name: &str, script: &Option<Script>, script_checker: &mut dyn ScriptChecker| -> Result<()> {
+    let check_step_script = |step: &Step,
+                             script_name: &str,
+                             script: &Option<Script>,
+                             script_checker: &mut dyn ScriptChecker|
+     -> Result<()> {
         if let Some(script) = script {
             script_checker
                 .check_script(script, skip_if_shell_unavailable)
@@ -290,25 +306,33 @@ fn run_step(
 ) -> Result<()> {
     let step_dir = step.directory();
 
-    let mut run_step_script = |name: &str, script: &Option<Script>, logger: &mut Logger<_>| -> Result<()> {
-        if let Some(script) = script {
-        logger.log(&format!("⚙️ PROGRESS Running {name}..."))?;
-            match run_script(&script, step_dir, Some(script_checker), logger.out) {
-                Ok(ScriptResult::Success) => return Ok(()),
-                Ok(ScriptResult::NotZeroExitStatus(code)) => {
-                    bail!("failed to run {name}: status code {code}")
+    let mut run_step_script =
+        |name: &str, script: &Option<Script>, logger: &mut Logger<_>| -> Result<()> {
+            if let Some(script) = script {
+                logger.log(&format!("⚙️ PROGRESS Running {name}..."))?;
+                match run_script(&script, step_dir, Some(script_checker), logger.out) {
+                    Ok(ScriptResult::Success) => return Ok(()),
+                    Ok(ScriptResult::NotZeroExitStatus(code)) => {
+                        bail!("failed to run {name}: status code {code}")
+                    }
+                    Err(e) => bail!("failed to run {name}: {e}"),
                 }
-                Err(e) => bail!("failed to run {name}: {e}"),
             }
-        }
-        Ok(())
-    };
+            Ok(())
+        };
 
     run_step_script("pre-script", &step.pre_script, logger)?;
 
     if !step.packages.is_empty() {
-        install_packages(&step.packages.iter().map(|p| p.name.clone()).collect::<Vec<String>>(),
-                         &step.package_manager, logger)?;
+        install_packages(
+            &step
+                .packages
+                .iter()
+                .map(|p| p.name.clone())
+                .collect::<Vec<String>>(),
+            &step.package_manager,
+            logger,
+        )?;
     }
 
     run_step_script("script", &step.script, logger)?;
@@ -318,17 +342,15 @@ fn run_step(
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        system::shell::mock_available_shells,
-    };
+    use crate::system::shell::mock_available_shells;
 
     use super::*;
-    use std::{collections::HashSet, env, fs, io};
-    use rstest::rstest;
-    use serial_test::serial;
-    use tempfile::tempdir;
     use crate::runner::script_checker::DefaultScriptChecker;
     use crate::system::pkg::PackageSource;
+    use rstest::rstest;
+    use serial_test::serial;
+    use std::{collections::HashSet, env, fs, io};
+    use tempfile::tempdir;
 
     struct FakeStateSaver;
     impl StateSaver for FakeStateSaver {
@@ -537,7 +559,13 @@ mod tests {
 
         let output = String::from_utf8_lossy(&output);
 
-        assert!(output.contains(&format!("skipped due to when-script returning exit code {exit_code}")), "{}", output);
+        assert!(
+            output.contains(&format!(
+                "skipped due to when-script returning exit code {exit_code}"
+            )),
+            "{}",
+            output
+        );
         Ok(())
     }
 
@@ -574,7 +602,11 @@ mod tests {
 
         assert!(res.is_err());
         let err_msg = res.unwrap_err().to_string();
-        assert!(err_msg.contains("failed to run check-script: status code 1"), "{}", err_msg);
+        assert!(
+            err_msg.contains("failed to run check-script: status code 1"),
+            "{}",
+            err_msg
+        );
 
         Ok(())
     }
@@ -626,13 +658,23 @@ mod tests {
             code: "echo \"what\"".to_string(),
         };
 
-        run_script(&script, Path::new("/"), Some(&mut mock_checker), &mut io::sink())?;
+        run_script(
+            &script,
+            Path::new("/"),
+            Some(&mut mock_checker),
+            &mut io::sink(),
+        )?;
 
         assert_eq!(mock_checker.check_value_calls, 0);
 
         mock_checker.check_value_calls = 0;
         mock_checker.is_checked_value = false;
-        run_script(&script, Path::new("/"), Some(&mut mock_checker), &mut io::sink())?;
+        run_script(
+            &script,
+            Path::new("/"),
+            Some(&mut mock_checker),
+            &mut io::sink(),
+        )?;
 
         assert_eq!(mock_checker.check_value_calls, 1);
         Ok(())
@@ -642,8 +684,12 @@ mod tests {
     #[case(1)]
     #[case(2)]
     #[serial]
-    fn test_is_completed_check_script_nonzero_exit_returns_failed(#[case] exit_code: i32) -> Result<()> {
-        unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;"); }
+    fn test_is_completed_check_script_nonzero_exit_returns_failed(
+        #[case] exit_code: i32,
+    ) -> Result<()> {
+        unsafe {
+            env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;");
+        }
         let step = Step {
             id: "test".to_string(),
             check_script: Some(Script {
@@ -659,7 +705,9 @@ mod tests {
         };
 
         let result = step.is_completed(None)?;
-        unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+        unsafe {
+            env::remove_var("MEPRIS_INSTALL_COMMAND");
+        }
 
         assert_eq!(result, StepCompletedResult::FailedCheckScript);
         Ok(())
@@ -668,9 +716,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_completed_pre_script_doesnt_require_check_script() -> Result<()> {
-        unsafe { env::set_var("MEPRIS_IS_INSTALLED_RESULT", "0"); }
-        unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;"); }
-        
+        unsafe {
+            env::set_var("MEPRIS_IS_INSTALLED_RESULT", "0");
+            env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;");
+        }
+
         let step = Step {
             id: "test".to_string(),
             pre_script: Some(Script {
@@ -679,7 +729,10 @@ mod tests {
             }),
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Apt,
-            packages: vec![Package{name: "pkg".to_string(), used_alias: false}],
+            packages: vec![Package {
+                name: "pkg".to_string(),
+                used_alias: false,
+            }],
             when_script: None,
             script: None,
             check_script: None,
@@ -687,8 +740,10 @@ mod tests {
 
         let result = step.is_completed(None)?;
 
-        unsafe { env::remove_var("MEPRIS_IS_INSTALLED_RESULT"); }
-        unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+        unsafe {
+            env::remove_var("MEPRIS_IS_INSTALLED_RESULT");
+            env::remove_var("MEPRIS_INSTALL_COMMAND");
+        }
 
         assert_eq!(result, StepCompletedResult::Completed);
         Ok(())
@@ -697,7 +752,9 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_completed_script_requires_check_script() -> Result<()> {
-        unsafe { env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;"); }
+        unsafe {
+            env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;");
+        }
         let step = Step {
             id: "test".to_string(),
             pre_script: None,
@@ -713,7 +770,9 @@ mod tests {
         };
 
         let result = step.is_completed(None)?;
-        unsafe { env::remove_var("MEPRIS_INSTALL_COMMAND"); }
+        unsafe {
+            env::remove_var("MEPRIS_INSTALL_COMMAND");
+        }
 
         assert_eq!(result, StepCompletedResult::HasScriptWithoutCheck);
         Ok(())
@@ -727,7 +786,10 @@ mod tests {
             pre_script: None,
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Choco,
-            packages: vec![Package{name: "pkg".to_string(), used_alias: false}],
+            packages: vec![Package {
+                name: "pkg".to_string(),
+                used_alias: false,
+            }],
             when_script: None,
             script: Some(Script {
                 shell: Shell::Bash,

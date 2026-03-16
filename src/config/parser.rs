@@ -69,9 +69,9 @@ mod tests {
     use crate::config::PackageManager;
 
     use super::*;
+    use crate::system::shell::Shell;
     use std::fs;
     use tempfile::tempdir;
-    use crate::system::shell::Shell;
 
     #[test]
     fn test_parse_with_relative_include() {
@@ -222,13 +222,43 @@ mod tests {
         };
 
         assert_eq!(steps.len(), 3);
-        assert_eq!(find_defaults("step_with_override").windows_package_manager.unwrap(), PackageManager::Choco);
-        assert_eq!(find_defaults("step_with_override").windows_shell.unwrap(), Shell::PowerShellCore);
-        assert_eq!(find_defaults("step_with_override").linux_shell.unwrap(), Shell::Bash);
-        assert_eq!(find_defaults("step_with_override").macos_shell.unwrap(), Shell::Bash);
-        assert_eq!(find_defaults("step_without_override").windows_package_manager.unwrap(), PackageManager::Scoop);
-        assert_eq!(find_defaults("step_without_override").windows_shell.unwrap(), Shell::Bash);
-        assert_eq!(find_defaults("step_without_override").linux_shell.unwrap(), Shell::PowerShellCore);
-        assert_eq!(find_defaults("step_without_override").macos_shell.unwrap(), Shell::PowerShellCore);
+        assert_eq!(
+            find_defaults("step_with_override")
+                .windows_package_manager
+                .unwrap(),
+            PackageManager::Choco
+        );
+        assert_eq!(
+            find_defaults("step_with_override").windows_shell.unwrap(),
+            Shell::PowerShellCore
+        );
+        assert_eq!(
+            find_defaults("step_with_override").linux_shell.unwrap(),
+            Shell::Bash
+        );
+        assert_eq!(
+            find_defaults("step_with_override").macos_shell.unwrap(),
+            Shell::Bash
+        );
+        assert_eq!(
+            find_defaults("step_without_override")
+                .windows_package_manager
+                .unwrap(),
+            PackageManager::Scoop
+        );
+        assert_eq!(
+            find_defaults("step_without_override")
+                .windows_shell
+                .unwrap(),
+            Shell::Bash
+        );
+        assert_eq!(
+            find_defaults("step_without_override").linux_shell.unwrap(),
+            Shell::PowerShellCore
+        );
+        assert_eq!(
+            find_defaults("step_without_override").macos_shell.unwrap(),
+            Shell::PowerShellCore
+        );
     }
 }

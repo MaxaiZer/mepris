@@ -1,12 +1,12 @@
 use strum::IntoEnumIterator;
 use which::which;
 
+use crate::system::os_info::{OS_INFO, Platform};
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Mutex;
-use serde::Deserialize;
 use strum_macros::EnumIter;
-use crate::system::os_info::{Platform, OS_INFO};
 
 static AVAILABLE_SHELLS: Mutex<Option<HashSet<Shell>>> = Mutex::new(None);
 static MOCKED_SHELLS: Mutex<Option<HashSet<Shell>>> = Mutex::new(None);
@@ -33,7 +33,7 @@ impl Shell {
         match info.platform {
             Platform::Linux => Shell::Bash,
             Platform::MacOS => Shell::Bash,
-            Platform::Windows => Shell::PowerShell
+            Platform::Windows => Shell::PowerShell,
         }
     }
 }

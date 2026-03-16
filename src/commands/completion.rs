@@ -1,5 +1,5 @@
 use crate::cli::CompletionArgs;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::CommandFactory;
 use clap_complete::{
     Shell,

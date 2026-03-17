@@ -134,7 +134,7 @@ fn print_info(
             .and_then(|s| s.to_str())
             .unwrap();
         if cur_source_file != previous_source_file {
-            if previous_source_file != "" {
+            if !previous_source_file.is_empty() {
                 writeln!(out)?;
             }
             writeln!(out, "From {}:", cur_source_file)?;
@@ -170,13 +170,12 @@ fn print_info(
 
         if !step.packages_to_install.is_empty() {
             let get_pkgs = |installed: bool| {
-                return step
-                    .packages_to_install
+                step.packages_to_install
                     .iter()
                     .filter(|p| p.installed == installed)
                     .map(|p| p.to_string())
                     .collect::<Vec<String>>()
-                    .join(", ");
+                    .join(", ")
             };
             let mut installed_packages = get_pkgs(true);
             let mut not_installed_packages = get_pkgs(false);
@@ -185,7 +184,7 @@ fn print_info(
                 installed_packages =
                     "Already installed ".to_owned().green().to_string() + &installed_packages;
                 if !not_installed_packages.is_empty() {
-                    installed_packages = installed_packages + ",";
+                    installed_packages += ",";
                 }
             }
             if !not_installed_packages.is_empty() {

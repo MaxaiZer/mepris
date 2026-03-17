@@ -115,7 +115,7 @@ fn print_step(
             }
         }
 
-        writeln!(out, "packages ({}):", pkg_manager.command().to_string())?;
+        writeln!(out, "packages ({}):", pkg_manager.command())?;
         if !installed.is_empty() {
             writeln!(
                 out,

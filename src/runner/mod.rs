@@ -82,10 +82,9 @@ impl Step {
             }
 
             let script = script.as_ref().unwrap();
-            let res_shell: Shell;
 
-            if script.shell.is_some() {
-                res_shell = script.shell.as_ref().unwrap().clone();
+            let res_shell: Shell = if script.shell.is_some() {
+                script.shell.as_ref().unwrap().clone()
             } else {
                 let default_shell = |get_shell: fn(&config::Defaults) -> Option<Shell>| {
                     config_step
@@ -95,12 +94,12 @@ impl Step {
                         .unwrap_or_else(Shell::default_for_current_os)
                 };
 
-                res_shell = match OS_INFO.platform {
+                match OS_INFO.platform {
                     Platform::Linux => default_shell(|d| d.linux_shell.clone()),
                     Platform::MacOS => default_shell(|d| d.macos_shell.clone()),
                     Platform::Windows => default_shell(|d| d.windows_shell.clone()),
                 }
-            }
+            };
 
             Some(Script {
                 shell: res_shell,
@@ -108,7 +107,7 @@ impl Step {
             })
         };
 
-        let pkg_manager = resolve_step_package_manager(&config_step);
+        let pkg_manager = resolve_step_package_manager(config_step);
 
         let mut packages: Vec<Package> = Vec::new();
         for cfg_pkg in &config_step.packages {
@@ -238,7 +237,7 @@ pub fn run(
 
         let completion = step.is_completed(Some(script_checker))?;
         if interactive {
-            match ask_confirmation(&step, &completion, &mut logger)? {
+            match ask_confirmation(step, &completion, &mut logger)? {
                 interactive::Decision::Run => {}
                 interactive::Decision::Skip => continue,
                 interactive::Decision::Abort => return Ok(None),
@@ -253,7 +252,7 @@ pub fn run(
         }
 
         logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
-        run_step(&step, script_checker, &mut logger)?;
+        run_step(step, script_checker, &mut logger)?;
         logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
     }
 
@@ -310,7 +309,7 @@ fn run_step(
         |name: &str, script: &Option<Script>, logger: &mut Logger<_>| -> Result<()> {
             if let Some(script) = script {
                 logger.log(&format!("⚙️ PROGRESS Running {name}..."))?;
-                match run_script(&script, step_dir, Some(script_checker), logger.out) {
+                match run_script(script, step_dir, Some(script_checker), logger.out) {
                     Ok(ScriptResult::Success) => return Ok(()),
                     Ok(ScriptResult::NotZeroExitStatus(code)) => {
                         bail!("failed to run {name}: status code {code}")

@@ -172,7 +172,7 @@ impl PackageManager {
         let cmd = match self {
             Self::Pacman | Self::Yay | Self::Paru => CommandSpec {
                 bin: "pacman".to_string(),
-                args: vec!["-Q".to_string(), pkg.to_string()],
+                args: vec!["-Qq".to_string()],
             },
             Self::Apt => CommandSpec {
                 bin: "dpkg".to_string(),
@@ -233,10 +233,7 @@ impl PackageManager {
         let out = String::from_utf8_lossy(&output.stdout);
 
         match self {
-            PackageManager::Pacman
-            | PackageManager::Yay
-            | PackageManager::Paru
-            | PackageManager::Dnf
+            PackageManager::Dnf
             | PackageManager::Zypper
             | PackageManager::Flatpak
             | PackageManager::Npm => Ok(output.status.success()),
@@ -254,10 +251,17 @@ impl PackageManager {
                     .any(|name| name == pkg))
             }
 
-            PackageManager::Winget
-            | PackageManager::Choco
-            | PackageManager::Brew
-            | PackageManager::Cargo => Ok(out.contains(pkg)),
+            PackageManager::Pacman | PackageManager::Yay | PackageManager::Paru => {
+                Ok(out.lines().any(|line| line == pkg))
+            }
+
+            PackageManager::Winget | PackageManager::Choco | PackageManager::Brew => {
+                Ok(out.contains(pkg))
+            }
+
+            PackageManager::Cargo => Ok(out
+                .lines()
+                .any(|line| line.starts_with(pkg) && line.contains(" v"))),
         }
     }
 }

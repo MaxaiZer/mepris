@@ -1,3 +1,4 @@
+use crate::system::os_info::{OS_INFO, Platform};
 use anyhow::{Context, bail};
 use serde::Deserialize;
 use std::process::{Command, Stdio};
@@ -145,7 +146,15 @@ impl PackageManager {
             Self::Scoop => vec![build_cmd("scoop.cmd", &["install"], pkgs)],
             Self::Choco => vec![build_cmd("choco", &["install", "-y"], pkgs)],
             Self::Cargo => vec![build_cmd("cargo", &["install"], pkgs)],
-            Self::Npm => vec![build_cmd("npm", &["i", "-g"], pkgs)],
+            Self::Npm => vec![build_cmd(
+                if OS_INFO.platform == Platform::Windows {
+                    "npm.cmd"
+                } else {
+                    "npm"
+                },
+                &["i", "-g"],
+                pkgs,
+            )],
         };
 
         for cmd in &commands {
@@ -215,7 +224,11 @@ impl PackageManager {
                 args: vec!["install".to_string(), "--list".to_string()],
             },
             Self::Npm => CommandSpec {
-                bin: "npm".to_string(),
+                bin: if OS_INFO.platform == Platform::Windows {
+                    "npm.cmd".to_string()
+                } else {
+                    "npm".to_string()
+                },
                 args: vec![
                     "list".to_string(),
                     "--depth=0".to_string(),

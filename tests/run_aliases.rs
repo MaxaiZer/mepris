@@ -12,7 +12,7 @@ fn test_dry_run_local_aliases() {
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
     unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
     }
 
     fs::write(
@@ -66,7 +66,7 @@ fn test_run_local_aliases() {
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
     unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
         env::set_var("MEPRIS_INSTALL_COMMAND", "echo installing");
         env::set_var("MEPRIS_IS_INSTALLED_RESULT", "1");
     }
@@ -123,7 +123,7 @@ fn test_dry_run_local_aliases_wrong_file_name() {
     let aliases_path = dir.path().join("aliases.yaml");
     let mut output = Vec::new();
     unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
     }
 
     fs::write(
@@ -163,8 +163,8 @@ fn test_dry_run_local_aliases_wrong_file_name() {
 
     assert!(res.is_ok());
     assert!(
-        output.contains("pkgname (apt-get)"),
-        "output doesn't contain 'pkgname (apt-get)': {output}"
+        output.contains("pkgname (apt)"),
+        "output doesn't contain 'pkgname (apt)': {output}"
     );
 }
 
@@ -179,7 +179,7 @@ fn test_dry_run_global_aliases() {
     let mut output = Vec::new();
     unsafe {
         env::set_var("MEPRIS_GLOBAL_ALIASES_PATH", aliases_path.to_str().unwrap());
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
     }
 
     fs::write(
@@ -240,7 +240,7 @@ fn test_dry_run_local_aliases_override_global() {
             "MEPRIS_GLOBAL_ALIASES_PATH",
             global_aliases_path.to_str().unwrap(),
         );
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
     };
 
     fs::write(

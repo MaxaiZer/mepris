@@ -26,7 +26,6 @@ use colored::Colorize;
 use interactive::ask_confirmation;
 use logger::Logger;
 use script_checker::ScriptChecker;
-use which::which;
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
@@ -150,8 +149,7 @@ impl Step {
         &self,
         script_checker: Option<&mut dyn ScriptChecker>,
     ) -> Result<StepCompletedResult> {
-        if std::env::var("MEPRIS_INSTALL_COMMAND").is_err()
-            && which(self.package_manager.command()).is_err()
+        if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && !self.package_manager.is_available()
         {
             return Ok(StepCompletedResult::NotInstalledPackageManager);
         }

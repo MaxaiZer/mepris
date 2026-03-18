@@ -5,7 +5,6 @@ use anyhow::bail;
 use std::collections::HashSet;
 use std::path::Path;
 use std::{fmt, io};
-use which::which;
 
 #[derive(Debug, Default)]
 pub struct StepRun {
@@ -81,8 +80,8 @@ pub fn run(steps: &[Step]) -> anyhow::Result<RunPlan> {
             let package_manager = step.package_manager.clone();
 
             step_dry_run.package_manager = Some(PackageManagerInfo {
-                name: package_manager.command().to_string(),
-                installed: which(package_manager.command()).is_ok(),
+                name: package_manager.to_string(),
+                installed: package_manager.is_available(),
             });
 
             let not_installed_pkgs: HashSet<String> = match &step_completed_res {

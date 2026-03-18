@@ -7,7 +7,6 @@ use std::{
 use crate::system::pkg::PackageManager;
 use anyhow::{Context, Result, anyhow, bail};
 use once_cell::sync::Lazy;
-use which::which;
 
 pub static OS_INFO: Lazy<OsInfo> = Lazy::new(|| get_os_info().expect("Failed to get OS info"));
 pub static DEFAULT_PACKAGE_MANAGER: Lazy<PackageManager> =
@@ -106,10 +105,8 @@ fn default_package_manager() -> Result<PackageManager> {
         PackageManager::Zypper,
     ];
 
-    for mgr in managers {
-        if which(mgr.command()).is_ok() {
-            return Ok(mgr);
-        }
-    }
-    bail!("Could not detect package manager")
+    managers
+        .into_iter()
+        .find(|mgr| mgr.is_available())
+        .ok_or_else(|| anyhow!("No available package manager"))
 }

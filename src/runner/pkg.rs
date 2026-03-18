@@ -4,14 +4,13 @@ use crate::system::os_info::{DEFAULT_PACKAGE_MANAGER, OS_INFO, Platform};
 use crate::system::pkg::PackageManager;
 use anyhow::bail;
 use std::io::Write;
-use which::which;
 
 pub fn resolve_step_package_manager(step: &Step) -> PackageManager {
     if let Some(source) = &step.package_source {
         if let Some(manager) = source
             .get_package_managers()
             .iter()
-            .find(|m| which(m.command()).is_ok())
+            .find(|m| m.is_available())
         {
             return manager.clone();
         } else {
@@ -36,8 +35,8 @@ pub fn install_packages(
     manager: &PackageManager,
     logger: &mut Logger<impl Write>,
 ) -> anyhow::Result<()> {
-    if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && which(manager.command()).is_err() {
-        bail!("Package manager {} not found", manager.command());
+    if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && !manager.is_available() {
+        bail!("Package manager {} not found", manager);
     }
 
     logger.log(&format!(

@@ -3,6 +3,7 @@ use anyhow::{Context, bail};
 use serde::Deserialize;
 use std::process::{Command, Stdio};
 use strum_macros::{Display, EnumIter, EnumString};
+use which::which;
 
 #[derive(Debug, Clone)]
 struct CommandSpec {
@@ -45,6 +46,7 @@ impl Repository {
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display, Hash, EnumString)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum PackageManager {
     Apt,
     Dnf,
@@ -62,21 +64,21 @@ pub enum PackageManager {
 }
 
 impl PackageManager {
-    pub const fn command(&self) -> &'static str {
+    pub fn is_available(&self) -> bool {
         match self {
-            Self::Pacman => "pacman",
-            Self::Apt => "apt-get",
-            Self::Dnf => "dnf",
-            Self::Zypper => "zypper",
-            Self::Brew => "brew",
-            Self::Winget => "winget",
-            Self::Yay => "yay",
-            Self::Paru => "paru",
-            Self::Flatpak => "flatpak",
-            Self::Scoop => "scoop",
-            Self::Choco => "choco",
-            Self::Cargo => "cargo",
-            Self::Npm => "npm",
+            Self::Pacman => which("pacman").is_ok(),
+            Self::Apt => which("apt-get").is_ok(),
+            Self::Dnf => which("dnf").is_ok(),
+            Self::Zypper => which("zypper").is_ok(),
+            Self::Brew => which("brew").is_ok(),
+            Self::Winget => which("winget").is_ok(),
+            Self::Yay => which("yay").is_ok(),
+            Self::Paru => which("paru").is_ok(),
+            Self::Flatpak => which("flatpak").is_ok(),
+            Self::Scoop => which("scoop").is_ok(),
+            Self::Choco => which("choco").is_ok(),
+            Self::Cargo => which("cargo").is_ok(),
+            Self::Npm => which("npm").is_ok(),
         }
     }
     pub fn install(&self, pkgs: &[String]) -> anyhow::Result<()> {

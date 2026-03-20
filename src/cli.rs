@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "mepris")]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(about = "Cross-platform declarative system setup tool", long_about = None)]
+#[command(about = "Declarative environment bootstrapper", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

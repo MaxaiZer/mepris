@@ -127,10 +127,19 @@ impl PackageManager {
                 .iter()
                 .map(|pkg| CommandSpec {
                     bin: "winget".into(),
-                    args: vec!["install", "-e", "--id", pkg]
-                        .into_iter()
-                        .map(String::from)
-                        .collect(),
+                    args: vec![
+                        "install",
+                        "--exact",
+                        "--id",
+                        pkg,
+                        "--source",
+                        "winget",
+                        "--accept-source-agreements",
+                        "--accept-package-agreements",
+                    ]
+                    .into_iter()
+                    .map(String::from)
+                    .collect(),
                 })
                 .collect(),
 

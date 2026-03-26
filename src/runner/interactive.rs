@@ -20,7 +20,7 @@ pub fn ask_confirmation(
     completion: &StepCompletedResult,
     logger: &mut Logger<impl Write>,
 ) -> Result<Decision> {
-    let mut cmds = vec!["r=Run", "s=Skip", "a=Abort", "l=Leave interactive mode"];
+    let mut cmds = vec!["r=Run", "s=Skip", "a=Abort", "l=Run and leave interactive mode"];
     if need_truncate_step_output(step) {
         cmds.push("v=View full step");
     }

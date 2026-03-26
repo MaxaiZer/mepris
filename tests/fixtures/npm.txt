@@ -1,0 +1,4 @@
+/home/max/.npm-global/lib
+/home/max/.npm-global/lib/node_modules/opencode-ai
+/home/max/.npm-global/lib/node_modules/yaml-language-server
+C:\Users\StryginM\AppData\Roaming\npm\node_modules\@angular\cli

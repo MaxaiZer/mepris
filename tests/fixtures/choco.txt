@@ -1,0 +1,7 @@
+7zip|26.0.0
+7zip.install|26.0.0
+chocolatey|2.6.0
+chocolatey-compatibility.extension|1.0.0
+chocolatey-core.extension|1.4.0
+chocolatey-windowsupdate.extension|1.0.5
+dbeaver|25.3.4

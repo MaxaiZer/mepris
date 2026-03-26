@@ -1,9 +1,21 @@
 use crate::system::os_info::{OS_INFO, Platform};
+use crate::system::pkg::parsers::parse_packages_list_func;
 use anyhow::{Context, bail};
 use serde::Deserialize;
-use std::process::{Command, Stdio};
+use std::cell::RefCell;
+use std::cmp::PartialEq;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::process::{Command, Output, Stdio};
 use strum_macros::{Display, EnumIter, EnumString};
+use tempfile::NamedTempFile;
 use which::which;
+
+mod parsers;
+
+thread_local! {
+    static PKG_CACHE: RefCell<HashMap<String, HashSet<String>>> = RefCell::new(HashMap::new());
+}
 
 #[derive(Debug, Clone)]
 struct CommandSpec {
@@ -81,6 +93,11 @@ impl PackageManager {
             Self::Npm => which("npm").is_ok(),
         }
     }
+
+    fn requires_cache(&self) -> bool {
+        parse_packages_list_func(self).is_ok()
+    }
+
     pub fn install(&self, pkgs: &[String]) -> anyhow::Result<()> {
         if let Ok(cmd) = std::env::var("MEPRIS_INSTALL_COMMAND") {
             let parts = shell_words::split(&cmd)?;
@@ -134,6 +151,7 @@ impl PackageManager {
                         pkg,
                         "--source",
                         "winget",
+                        "--silent",
                         "--accept-source-agreements",
                         "--accept-package-agreements",
                     ]
@@ -182,8 +200,21 @@ impl PackageManager {
             }
         }
 
+        if self.requires_cache() {
+            let cache_id = self.to_string();
+            PKG_CACHE.with(|cache| {
+                let mut cache = cache.borrow_mut();
+                if let Some(entry) = cache.get_mut(&cache_id) {
+                    pkgs.iter().for_each(|pkg| {
+                        entry.insert(pkg.clone());
+                    });
+                }
+            });
+        }
+
         Ok(())
     }
+
     pub fn is_installed(&self, pkg: &str) -> anyhow::Result<bool> {
         if let Ok(res) = std::env::var("MEPRIS_IS_INSTALLED_RESULT") {
             return Ok(res == "0");
@@ -216,18 +247,23 @@ impl PackageManager {
             },
             Self::Winget => CommandSpec {
                 bin: "winget".to_string(),
-                args: vec!["list".to_string(), "--id".to_string(), pkg.to_string()],
+                args: vec![
+                    "export".to_string(),
+                    "--source".to_string(),
+                    "winget".to_string(),
+                    "-o".to_string(),
+                ],
             },
             Self::Scoop => CommandSpec {
                 bin: "scoop.cmd".to_string(),
-                args: vec!["list".to_string(), pkg.to_string()],
+                args: vec!["list".to_string()],
             },
             Self::Choco => CommandSpec {
                 bin: "choco".to_string(),
                 args: vec![
                     "list".to_string(),
-                    "--local-only".to_string(),
-                    pkg.to_string(),
+                    "--limit-output".to_string(),
+                    "--no-color".to_string(),
                 ],
             },
             Self::Cargo => CommandSpec {
@@ -244,48 +280,104 @@ impl PackageManager {
                     "list".to_string(),
                     "--depth=0".to_string(),
                     "-g".to_string(),
-                    pkg.to_string(),
+                    "----parseable".to_string(),
                 ],
             },
         };
 
-        let output = Command::new(&cmd.bin)
-            .args(&cmd.args)
-            .output()
-            .context(format!("Failed to run {} {}", &cmd.bin, cmd.args.join(" ")))?;
+        if self.requires_cache() {
+            return run_cacheable_is_installed(self, &cmd, parse_packages_list_func(self)?, pkg);
+        }
 
+        let output = run_command(&cmd)?;
         let out = String::from_utf8_lossy(&output.stdout);
 
         match self {
-            PackageManager::Dnf
-            | PackageManager::Zypper
-            | PackageManager::Flatpak
-            | PackageManager::Npm => Ok(output.status.success()),
+            PackageManager::Dnf | PackageManager::Zypper | PackageManager::Flatpak => {
+                Ok(output.status.success())
+            }
 
             PackageManager::Apt => {
                 Ok(output.status.success() && out.lines().any(|line| line.starts_with("ii")))
-            }
-
-            PackageManager::Scoop => {
-                //first line is "installed apps matching <pkg_name>:" + scoop uses SUBSTRING MATCH. package name is in first column
-                Ok(out
-                    .lines()
-                    .skip(1)
-                    .filter_map(|line| line.split_whitespace().next())
-                    .any(|name| name == pkg))
             }
 
             PackageManager::Pacman | PackageManager::Yay | PackageManager::Paru => {
                 Ok(out.lines().any(|line| line == pkg))
             }
 
-            PackageManager::Winget | PackageManager::Choco | PackageManager::Brew => {
-                Ok(out.contains(pkg))
-            }
+            PackageManager::Brew => Ok(out.contains(pkg)),
 
             PackageManager::Cargo => Ok(out
                 .lines()
                 .any(|line| line.starts_with(pkg) && line.contains(" v"))),
+
+            PackageManager::Npm
+            | PackageManager::Scoop
+            | PackageManager::Choco
+            | PackageManager::Winget => {
+                bail!("Unreachable code")
+            }
         }
     }
+}
+
+fn run_cacheable_is_installed(
+    manager: &PackageManager,
+    cmd: &CommandSpec,
+    parse: fn(output: String) -> anyhow::Result<HashSet<String>>,
+    pkg: &str,
+) -> anyhow::Result<bool> {
+    let res = PKG_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let cache_id = manager.to_string();
+
+        let packages = cache.entry(cache_id).or_insert_with(|| {
+            let output = if manager == &PackageManager::Winget {
+                run_win_command_with_file_output(cmd).unwrap()
+            } else {
+                let res = run_command(cmd).unwrap();
+                String::from_utf8_lossy(&res.stdout).to_string()
+            };
+
+            parse(output).unwrap()
+        });
+
+        packages.contains(pkg)
+    });
+
+    Ok(res)
+}
+
+fn run_command(cmd: &CommandSpec) -> anyhow::Result<Output> {
+    Command::new(&cmd.bin)
+        .args(&cmd.args)
+        .output()
+        .context(format!("Failed to run {} {}", &cmd.bin, cmd.args.join(" ")))
+}
+
+fn run_win_command_with_file_output(cmd: &CommandSpec) -> anyhow::Result<String> {
+    let temp = NamedTempFile::new().context("failed to create temp file")?;
+    let path = temp.path();
+
+    let cmd_str =
+        cmd.bin.clone() + " " + &cmd.args.join(" ") + " " + path.to_string_lossy().as_ref();
+
+    let script = format!(
+        r#"
+    $tmp = New-TemporaryFile
+    {}
+    Get-Content $tmp
+    Remove-Item $tmp
+    "#,
+        cmd_str
+    );
+
+    let _ = Command::new("powershell")
+        .arg("-Command")
+        .arg(script)
+        .output()
+        .context("failed to run powershell")?;
+
+    let file = fs::read_to_string(path).context("failed to read temp file")?;
+    Ok(file)
 }

@@ -261,4 +261,30 @@ mod tests {
             Shell::PowerShellCore
         );
     }
+
+    #[test]
+    fn test_parse_script_full_form() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let parent_path = dir.path().join("file.yaml");
+
+        fs::write(
+            &parent_path,
+            r#"
+            defaults:
+              windows_shell: bash
+            steps:
+              - id: "step1"
+                script:
+                  shell: pwsh
+                  run: exit 0
+            "#,
+        )
+            .expect("Failed to write file.yaml");
+
+        let steps = parse(parent_path.to_str().unwrap()).expect("Failed to parse YAML");
+
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].script.as_ref().unwrap().shell.as_ref().unwrap(), &Shell::PowerShellCore);
+        assert_eq!(steps[0].script.as_ref().unwrap().code, "exit 0");
+    }
 }

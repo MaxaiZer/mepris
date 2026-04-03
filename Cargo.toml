@@ -23,6 +23,8 @@ dotenvy = "0.15.7"
 comfy-table = "7.2.1"
 clap_complete = "4.5.58"
 shell-words = "1"
+indexmap = "2.13.0"
+strip-ansi-escapes = "0.2.1"
 
 [dev-dependencies]
 rstest = "0.26.1"

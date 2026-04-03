@@ -6,6 +6,7 @@ use serde::{
     de::{self, IntoDeserializer, value::StringDeserializer},
 };
 use strum::IntoEnumIterator;
+use strum_macros::Display;
 
 pub mod alias;
 pub mod expr;
@@ -86,24 +87,24 @@ pub struct Script {
     pub code: String,
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ScriptDef {
-    Short(String),
-    Full {
-        shell: Shell,
-        #[serde(rename = "run")]
-        code: String,
-    },
-}
-
 impl<'de> Deserialize<'de> for Script {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>,
+        D: Deserializer<'de>,
     {
-        let helper = ScriptDef::deserialize(deserializer)?;
-        Ok(match helper {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum ScriptDef {
+            Short(String),
+            Full {
+                shell: Shell,
+                #[serde(rename = "run")]
+                code: String,
+            },
+        }
+
+        let value = ScriptDef::deserialize(deserializer)?;
+        Ok(match value {
             ScriptDef::Short(code) => Script { shell: None, code },
             ScriptDef::Full { shell, code } => Script {
                 shell: Some(shell),
@@ -111,6 +112,64 @@ impl<'de> Deserialize<'de> for Script {
             },
         })
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Require {
+    pub id: String,
+    pub os: Option<Expr>,
+    pub when_script: Option<Script>,
+}
+
+impl<'de> Deserialize<'de> for Require {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RequireDef {
+            Short(String),
+            Full {
+                id: String,
+                #[serde(default, deserialize_with = "expr::parse_os_expr")]
+                os: Option<Expr>,
+                #[serde(rename = "when")]
+                when_script: Option<Script>,
+            },
+        }
+
+        let value = RequireDef::deserialize(deserializer).map_err(|err| {
+            de::Error::custom(format!(
+                "Invalid require format: {}\n\
+                 Expected either a short string (id) or a full object with fields 'id', optional 'os' and optional 'when'.",
+                err
+            ))
+        })?;
+        Ok(match value {
+            RequireDef::Short(id) => Require {
+                id,
+                os: None,
+                when_script: None,
+            },
+            RequireDef::Full {
+                id,
+                os,
+                when_script,
+            } => Require {
+                id,
+                os,
+                when_script,
+            },
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Display, Default)]
+pub enum StepSelectionReason {
+    #[default]
+    MatchedFilter,
+    Dependency,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -131,11 +190,21 @@ pub struct Step {
     pub script: Option<Script>,
     #[serde(rename = "check")]
     pub check_script: Option<Script>,
+    #[serde(default)]
+    pub requires: Vec<Require>,
+    #[serde(default)]
+    pub provides: Vec<String>,
 
     #[serde(skip_deserializing)]
     pub source_file: String,
     #[serde(skip_deserializing)]
     pub defaults: Option<Defaults>,
+    #[serde(skip_deserializing)]
+    pub selection_reason: Option<StepSelectionReason>,
+    #[serde(skip_deserializing)]
+    pub dependencies: Vec<String>,
+    #[serde(skip_deserializing)]
+    pub dependency_of: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -3,9 +3,9 @@ use anyhow::{Context, bail};
 use serde_json::Value;
 use std::collections::HashSet;
 
-pub fn parse_packages_list_func(
-    manager: &PackageManager,
-) -> anyhow::Result<fn(String) -> anyhow::Result<HashSet<String>>> {
+type ParserFn = fn(String) -> anyhow::Result<HashSet<String>>;
+
+pub fn parse_packages_list_func(manager: &PackageManager) -> anyhow::Result<ParserFn> {
     match manager {
         PackageManager::Scoop => Ok(SCOOP_PARSE_PACKAGES_LIST),
         PackageManager::Choco => Ok(CHOCO_PARSE_PACKAGES_LIST),

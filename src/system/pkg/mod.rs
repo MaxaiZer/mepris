@@ -56,10 +56,13 @@ impl Repository {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display, Hash, EnumString)]
+#[derive(
+    Debug, Deserialize, Clone, PartialEq, Eq, EnumIter, Display, Hash, EnumString, Default,
+)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum PackageManager {
+    #[default]
     Apt,
     Dnf,
     Pacman,

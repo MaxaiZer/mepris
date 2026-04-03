@@ -1,18 +1,16 @@
+pub mod filters;
+pub mod sort;
+
+use crate::runner::state;
+use crate::{
+    config::Step,
+    runner::{self, RunState},
+};
+use anyhow::{Context, Result, bail};
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
-
-use crate::runner::state;
-use crate::{
-    config::{
-        Step,
-        expr::{eval_os_expr, eval_tags_expr, parse},
-    },
-    runner::{self, RunState},
-    system::os_info::OsInfo,
-};
-use anyhow::{Context, Result, bail};
 
 pub struct RunStateSaver {
     pub file: String,
@@ -81,6 +79,34 @@ pub fn check_env(steps: &[&Step]) -> Result<()> {
     Ok(())
 }
 
+pub fn check_step_env(step: &Step) -> Result<()> {
+    let mut missing: HashMap<String, Vec<String>> = HashMap::new();
+
+    for env in step.env.iter() {
+        if std::env::var(env).is_err() {
+            missing
+                .entry(env.clone())
+                .or_default()
+                .push(step.id.clone());
+        }
+    }
+
+    if !missing.is_empty() {
+        let mut msg = String::from("Undefined environment variables:");
+        missing.iter().for_each(|(env, steps)| {
+            let steps_str = if steps.len() > 1 { "steps" } else { "step" };
+            msg.push_str(&format!(
+                "\n{} (required by {steps_str} {})",
+                env,
+                steps.join(", ")
+            ));
+        });
+        bail!(msg);
+    }
+
+    Ok(())
+}
+
 pub fn check_unique_id(steps: &[Step]) -> Result<()> {
     let mut steps_id: HashMap<String, usize> = HashMap::new();
 
@@ -110,83 +136,6 @@ pub fn check_unique_id(steps: &[Step]) -> Result<()> {
     Ok(())
 }
 
-pub struct FilterResult<'a> {
-    pub matching: Vec<&'a Step>,
-    pub not_matching: Vec<&'a Step>,
-}
-
-pub fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> Result<FilterResult<'a>> {
-    let map: HashMap<&str, &Step> = steps.iter().copied().map(|s| (s.id.as_str(), s)).collect();
-
-    let unknown_steps: Vec<_> = ids
-        .iter()
-        .filter(|id| !map.contains_key(id.as_str()))
-        .map(|id| id.as_str())
-        .collect();
-
-    if !unknown_steps.is_empty() {
-        bail!("Unknown steps: {}", unknown_steps.join(", "));
-    }
-
-    Ok(FilterResult {
-        matching: ids
-            .iter()
-            .map(|id| *map.get(id.as_str()).unwrap())
-            .collect(),
-        not_matching: map
-            .values()
-            .copied()
-            .filter(|s| !ids.contains(&s.id))
-            .collect(),
-    })
-}
-
-pub fn filter_by_tags<'a>(steps: &[&'a Step], tags_expr: &str) -> Result<FilterResult<'a>> {
-    let expr = parse(tags_expr)?;
-    check_tags_exist(steps, &expr.vars().into_iter().collect::<Vec<_>>())?;
-
-    let (matching, not_matching): (Vec<_>, Vec<_>) =
-        steps.iter().partition(|s| eval_tags_expr(&expr, &s.tags));
-    Ok(FilterResult {
-        matching,
-        not_matching,
-    })
-}
-
-pub fn filter_steps_start_with_id<'a>(
-    steps: &[&'a Step],
-    start_step_id: &str,
-) -> Result<FilterResult<'a>> {
-    if let Some(pos) = steps.iter().position(|s| s.id == start_step_id) {
-        let (not_matching, matching) = steps.split_at(pos);
-
-        Ok(FilterResult {
-            matching: matching.to_vec(),
-            not_matching: not_matching.to_vec(),
-        })
-    } else {
-        bail!("Start step '{start_step_id}' not found in file");
-    }
-}
-
-pub fn filter_by_os<'a>(steps: &[&'a Step], os_info: &OsInfo) -> Result<FilterResult<'a>> {
-    let (matching, not_matching): (Vec<_>, Vec<_>) = steps.iter().partition(|s| {
-        if s.os.is_none() {
-            return true;
-        }
-        if let Some(os_expr) = &s.os
-            && eval_os_expr(os_expr, os_info)
-        {
-            return true;
-        }
-        false
-    });
-    Ok(FilterResult {
-        matching,
-        not_matching,
-    })
-}
-
 pub fn check_tags_exist(steps: &[&Step], tags_to_check: &[String]) -> Result<()> {
     let all_tags: HashSet<_> = steps.iter().flat_map(|s| &s.tags).collect();
 
@@ -197,7 +146,7 @@ pub fn check_tags_exist(steps: &[&Step], tags_to_check: &[String]) -> Result<()>
         .collect();
 
     if !unknown_tags.is_empty() {
-        anyhow::bail!("Unknown tags: {}", unknown_tags.join(", "));
+        bail!("Unknown tags: {}", unknown_tags.join(", "));
     }
     Ok(())
 }

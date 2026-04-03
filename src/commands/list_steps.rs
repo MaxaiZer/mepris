@@ -1,10 +1,10 @@
 use std::{collections::HashSet, io::Write, path::Path};
 
-use super::utils::{check_unique_id, filter_by_os};
+use super::utils::check_unique_id;
+use crate::commands::utils::filters::{filter_by_os, filter_by_tags};
 use crate::config::parser;
 use crate::{
     cli::ListStepsArgs,
-    commands::utils::filter_by_tags,
     config::{Step, expr::eval_os_expr},
     system::os_info::OS_INFO,
 };

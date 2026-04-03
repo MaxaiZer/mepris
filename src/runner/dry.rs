@@ -1,10 +1,8 @@
-use crate::runner::script::{ScriptResult, run_script};
+use crate::config::StepSelectionReason;
 use crate::runner::{Step, StepCompletedResult};
 use crate::system::shell::is_shell_available;
-use anyhow::bail;
 use std::collections::HashSet;
-use std::path::Path;
-use std::{fmt, io};
+use std::fmt;
 
 #[derive(Debug, Default)]
 pub struct StepRun {
@@ -14,6 +12,9 @@ pub struct StepRun {
     pub missing_shells: Vec<String>,
     pub package_manager: Option<PackageManagerInfo>,
     pub packages_to_install: Vec<PackageInfo>,
+    pub selection_reason: StepSelectionReason,
+    pub dependencies: Vec<String>,
+    pub dependency_of: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -42,37 +43,22 @@ pub struct PackageManagerInfo {
 #[derive(Debug)]
 pub struct RunPlan {
     pub steps_to_run: Vec<StepRun>,
-    pub steps_skipped_by_when: Vec<String>,
 }
 
 pub fn run(steps: &[Step]) -> anyhow::Result<RunPlan> {
     let mut res = RunPlan {
         steps_to_run: vec![],
-        steps_skipped_by_when: vec![],
     };
 
     for step in steps {
-        if let Some(when_script) = &step.when_script {
-            match run_script(
-                when_script,
-                Path::new(&step.source_file).parent().unwrap(),
-                None,
-                &mut io::sink(),
-            ) {
-                Ok(ScriptResult::Success) => (),
-                Ok(ScriptResult::NotZeroExitStatus(_)) => {
-                    res.steps_skipped_by_when.push(step.id.clone());
-                    continue;
-                }
-                Err(e) => bail!("Failed to run when-script for step '{}': {}", step.id, e),
-            }
-        }
-
         let step_completed_res = step.is_completed(None)?;
         let mut step_dry_run = StepRun {
             id: step.id.clone(),
             source_file: step.source_file.clone(),
             step_completed_result: step_completed_res.clone(),
+            selection_reason: step.selection_reason.clone(),
+            dependencies: step.dependencies.clone(),
+            dependency_of: step.dependency_of.clone(),
             ..Default::default()
         };
 

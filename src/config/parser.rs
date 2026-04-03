@@ -2,7 +2,7 @@ use std::{collections::HashSet, fs, path::Path};
 
 use crate::{
     config::{Config, Defaults, Step},
-    helpers,
+    utils,
 };
 use anyhow::{Context, Result};
 
@@ -17,7 +17,7 @@ fn parse_recursive(
     base_dir: Option<&Path>,
     inherited_defaults: Option<Defaults>,
 ) -> Result<Vec<Step>> {
-    let abs_path = helpers::get_absolute_path(file, base_dir)
+    let abs_path = utils::file::get_absolute_path(file, base_dir)
         .with_context(|| format!("Failed to resolve absolute path for '{file}'"))?;
     let abs_path_str = abs_path
         .to_str()
@@ -279,12 +279,15 @@ mod tests {
                   run: exit 0
             "#,
         )
-            .expect("Failed to write file.yaml");
+        .expect("Failed to write file.yaml");
 
         let steps = parse(parent_path.to_str().unwrap()).expect("Failed to parse YAML");
 
         assert_eq!(steps.len(), 1);
-        assert_eq!(steps[0].script.as_ref().unwrap().shell.as_ref().unwrap(), &Shell::PowerShellCore);
+        assert_eq!(
+            steps[0].script.as_ref().unwrap().shell.as_ref().unwrap(),
+            &Shell::PowerShellCore
+        );
         assert_eq!(steps[0].script.as_ref().unwrap().code, "exit 0");
     }
 }

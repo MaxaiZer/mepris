@@ -1,6 +1,6 @@
+use anyhow::Context;
+use anyhow::Result;
 use std::path::{Path, PathBuf};
-
-use anyhow::{Context, Result};
 
 pub fn get_absolute_path(file: &str, base_dir: Option<&Path>) -> Result<PathBuf> {
     let path = Path::new(file);

@@ -1,12 +1,44 @@
-use crate::runner::Script;
+use crate::config;
 use crate::runner::script_checker::ScriptChecker;
+use crate::system::os_info::{OS_INFO, Platform};
 use crate::system::shell::Shell;
-use anyhow::bail;
+use anyhow::{Context, bail};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
+
+pub struct Script {
+    pub shell: Shell,
+    pub code: String,
+}
+
+impl Script {
+    pub fn from(script: &config::Script, defaults: &Option<config::Defaults>) -> Self {
+        let res_shell: Shell = if script.shell.is_some() {
+            script.shell.as_ref().unwrap().clone()
+        } else {
+            let default_shell = |get_shell: fn(&config::Defaults) -> Option<Shell>| {
+                defaults
+                    .as_ref()
+                    .and_then(get_shell)
+                    .unwrap_or_else(Shell::default_for_current_os)
+            };
+
+            match OS_INFO.platform {
+                Platform::Linux => default_shell(|d| d.linux_shell.clone()),
+                Platform::MacOS => default_shell(|d| d.macos_shell.clone()),
+                Platform::Windows => default_shell(|d| d.windows_shell.clone()),
+            }
+        };
+
+        Script {
+            shell: res_shell,
+            code: script.code.clone(),
+        }
+    }
+}
 
 pub enum ScriptResult {
     Success,
@@ -17,7 +49,7 @@ pub fn run_script(
     script: &Script,
     dir: &Path,
     script_checker: Option<&mut dyn ScriptChecker>,
-    out: &mut impl Write,
+    out: &mut dyn Write,
 ) -> anyhow::Result<ScriptResult> {
     if let Some(script_checker) = script_checker {
         if !script_checker.is_checked(script) {
@@ -33,7 +65,8 @@ pub fn run_script(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .current_dir(dir)
-        .spawn()?;
+        .spawn()
+        .context(format!("failed to run {}", cmd))?;
 
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
@@ -104,14 +137,14 @@ pub fn run_noninteractive_script(
     }
 
     let (cmd, args) = get_script_cmd(script);
-
     let mut child = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .current_dir(dir)
-        .spawn()?;
+        .spawn()
+        .context(format!("failed to run {}", cmd))?;
 
     let status = child.wait()?;
     get_script_result(&status)

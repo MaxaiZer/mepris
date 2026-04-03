@@ -1,13 +1,13 @@
 use std::io::Write;
 
-pub struct Logger<'a, W: Write> {
+pub struct Logger<'a> {
     pub current_step: usize,
     pub steps_count: usize,
-    pub out: &'a mut W,
+    pub out: &'a mut dyn Write,
 }
 
-impl<'a, W: Write> Logger<'a, W> {
-    pub fn new(step_count: usize, out: &'a mut W) -> Self {
+impl<'a> Logger<'a> {
+    pub fn new(step_count: usize, out: &'a mut dyn Write) -> Self {
         Logger {
             current_step: 0,
             steps_count: step_count,

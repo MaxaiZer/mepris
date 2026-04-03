@@ -1,35 +1,37 @@
 use std::cmp::PartialEq;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::{
     io::Write,
     path::{Path, PathBuf},
 };
 
-pub(crate) mod dry;
-mod interactive;
-mod logger;
+pub mod dry;
+pub mod interactive;
+pub mod logger;
 mod pkg;
-mod script;
+pub mod script;
 pub mod script_checker;
 pub mod state;
 
+pub use interactive::{CliInteractor, Decision, Interactor};
+
 use crate::{config, config::alias::load_aliases};
 
+use crate::config::StepSelectionReason;
 use crate::config::alias::PackageAliases;
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
-use crate::runner::script::{ScriptResult, run_noninteractive_script, run_script};
-use crate::system::os_info::{OS_INFO, Platform};
+pub(crate) use crate::runner::script::{
+    Script, ScriptResult, run_noninteractive_script, run_script,
+};
 use crate::system::pkg::PackageManager;
 use crate::system::shell::Shell;
 use anyhow::{Context, Result, bail};
 use colored::Colorize;
-use interactive::ask_confirmation;
 use logger::Logger;
 use script_checker::ScriptChecker;
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
-    pub interactive: bool,
     pub dry_run: bool,
 }
 
@@ -47,11 +49,6 @@ pub struct Package {
     pub used_alias: bool,
 }
 
-pub struct Script {
-    shell: Shell,
-    code: String,
-}
-
 #[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub enum StepCompletedResult {
     #[default]
@@ -62,48 +59,37 @@ pub enum StepCompletedResult {
     HasScriptWithoutCheck,
 }
 
+#[derive(PartialEq, Debug)]
+enum ExecutionResult {
+    Completed,
+    Skipped,
+    CompletedWithMissingDeps,
+}
+
+#[derive(Default)]
 pub struct Step {
     pub id: String,
-    pub when_script: Option<Script>,
     pub package_manager: PackageManager,
     pub packages: Vec<Package>,
     pub pre_script: Option<Script>,
     pub script: Option<Script>,
     pub check_script: Option<Script>,
     pub source_file: String,
+    pub selection_reason: StepSelectionReason,
+    pub dependencies: Vec<String>,
+    pub dependency_of: Vec<String>,
 }
 
 impl Step {
     fn from(config_step: &config::Step, aliases: &PackageAliases) -> Self {
-        let resolve_shell = |script: &Option<config::Script>| -> Option<Script> {
+        let resolve_script = |script: &Option<config::Script>| -> Option<Script> {
             if script.is_none() {
                 return None;
             }
-
-            let script = script.as_ref().unwrap();
-
-            let res_shell: Shell = if script.shell.is_some() {
-                script.shell.as_ref().unwrap().clone()
-            } else {
-                let default_shell = |get_shell: fn(&config::Defaults) -> Option<Shell>| {
-                    config_step
-                        .defaults
-                        .as_ref()
-                        .and_then(get_shell)
-                        .unwrap_or_else(Shell::default_for_current_os)
-                };
-
-                match OS_INFO.platform {
-                    Platform::Linux => default_shell(|d| d.linux_shell.clone()),
-                    Platform::MacOS => default_shell(|d| d.macos_shell.clone()),
-                    Platform::Windows => default_shell(|d| d.windows_shell.clone()),
-                }
-            };
-
-            Some(Script {
-                shell: res_shell,
-                code: script.code.clone(),
-            })
+            Some(Script::from(
+                script.as_ref().unwrap(),
+                &config_step.defaults,
+            ))
         };
 
         let pkg_manager = resolve_step_package_manager(config_step);
@@ -120,25 +106,30 @@ impl Step {
 
         Step {
             id: config_step.id.clone(),
-            when_script: resolve_shell(&config_step.when_script),
             package_manager: pkg_manager,
             packages,
-            pre_script: resolve_shell(&config_step.pre_script),
-            script: resolve_shell(&config_step.script),
-            check_script: resolve_shell(&config_step.check_script),
+            pre_script: resolve_script(&config_step.pre_script),
+            script: resolve_script(&config_step.script),
+            check_script: resolve_script(&config_step.check_script),
             source_file: config_step.source_file.clone(),
+            selection_reason: config_step
+                .selection_reason
+                .clone()
+                .context(format!(
+                    "selection_reason must be set for config step '{}'",
+                    config_step.id
+                ))
+                .unwrap(),
+            dependencies: config_step.dependencies.clone(),
+            dependency_of: config_step.dependency_of.clone(),
         }
     }
 
     pub fn all_used_shells(&self) -> HashSet<Shell> {
-        [
-            self.when_script.as_ref(),
-            self.pre_script.as_ref(),
-            self.script.as_ref(),
-        ]
-        .iter()
-        .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
-        .collect()
+        [self.pre_script.as_ref(), self.script.as_ref()]
+            .iter()
+            .filter_map(|script_opt| script_opt.map(|s| s.shell.clone()))
+            .collect()
     }
 
     pub fn directory(&self) -> &Path {
@@ -168,7 +159,8 @@ impl Step {
         }
 
         if let Some(check_script) = self.check_script.as_ref() {
-            let res = run_noninteractive_script(check_script, self.directory(), script_checker)?;
+            let res = run_noninteractive_script(check_script, self.directory(), script_checker)
+                .context(format!("failed to run check-script for step '{}'", self.id))?;
             match res {
                 ScriptResult::NotZeroExitStatus(_) => {
                     return Ok(StepCompletedResult::FailedCheckScript);
@@ -184,10 +176,11 @@ impl Step {
 }
 
 pub fn run(
-    steps: &[&config::Step],
+    steps: &[config::Step],
     params: &RunParameters,
     state_saver: &dyn StateSaver,
     script_checker: &mut dyn ScriptChecker,
+    mut interactor: Option<&mut dyn Interactor>,
     out: &mut impl Write,
 ) -> Result<Option<dry::RunPlan>> {
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
@@ -199,29 +192,17 @@ pub fn run(
     }
 
     let mut logger = Logger::new(steps.len(), out);
-    let mut interactive = params.interactive;
+    let mut interactive = interactor.is_some();
+    let mut execution_results: HashMap<String, ExecutionResult> = HashMap::new();
 
     for (i, step) in steps.iter_mut().enumerate() {
         logger.current_step = i + 1;
 
-        if let Some(when_script) = &step.when_script {
-            match run_script(
-                when_script,
-                Path::new(&step.source_file).parent().unwrap(),
-                Some(script_checker),
-                logger.out,
-            ) {
-                Ok(ScriptResult::Success) => (),
-                Ok(ScriptResult::NotZeroExitStatus(code)) => {
-                    logger.log(&format!(
-                        "⏭️ PROGRESS Step '{}' skipped due to when-script returning exit code {}",
-                        step.id, code
-                    ))?;
-                    continue;
-                }
-                Err(e) => bail!("Failed to run when-script for step '{}': {}", step.id, e),
-            }
-        }
+        let has_broken_deps = step.dependencies.iter().any(|dep| {
+            execution_results
+                .get(dep)
+                .is_some_and(|res| res != &ExecutionResult::Completed)
+        });
 
         if state_saver
             .save(&RunState {
@@ -234,12 +215,19 @@ pub fn run(
         }
 
         let completion = step.is_completed(Some(script_checker))?;
-        if interactive {
-            match ask_confirmation(step, &completion, &mut logger)? {
-                interactive::Decision::Run => {}
-                interactive::Decision::Skip => continue,
-                interactive::Decision::Abort => return Ok(None),
-                interactive::Decision::LeaveInteractiveMode => interactive = false,
+        if interactive && let Some(interactor) = interactor.as_mut() {
+            match interactor.ask_confirmation(step, has_broken_deps, &completion, &mut logger)? {
+                Decision::Run => {}
+                Decision::Skip => {
+                    if completion == StepCompletedResult::Completed {
+                        execution_results.insert(step.id.clone(), ExecutionResult::Completed);
+                    } else {
+                        execution_results.insert(step.id.clone(), ExecutionResult::Skipped);
+                    }
+                    continue;
+                }
+                Decision::Abort => return Ok(None),
+                Decision::LeaveInteractiveMode => interactive = false,
             }
         } else if completion == StepCompletedResult::Completed {
             logger.log(&format!(
@@ -249,9 +237,19 @@ pub fn run(
             continue;
         }
 
+        if !interactive && has_broken_deps {
+            bail!("cannot run step with broken dependencies without interactive mode")
+        }
+
         logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
         run_step(step, script_checker, &mut logger)?;
         logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
+
+        if has_broken_deps {
+            execution_results.insert(step.id.clone(), ExecutionResult::CompletedWithMissingDeps);
+        } else {
+            execution_results.insert(step.id.clone(), ExecutionResult::Completed);
+        }
     }
 
     if state_saver
@@ -264,7 +262,7 @@ pub fn run(
         logger.log(&format!("{} Failed to save run state", "Warning:".yellow()))?;
     }
 
-    writeln!(out, "✅ Run completed")?;
+    logger.log("✅ Run completed")?;
 
     Ok(None)
 }
@@ -288,7 +286,6 @@ fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptCheck
     };
 
     for step in steps.iter() {
-        check_step_script(step, "when-script", &step.when_script, script_checker)?;
         check_step_script(step, "pre-script", &step.pre_script, script_checker)?;
         check_step_script(step, "script", &step.script, script_checker)?;
         check_step_script(step, "check-script", &step.check_script, script_checker)?;
@@ -299,12 +296,12 @@ fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptCheck
 fn run_step(
     step: &Step,
     script_checker: &mut dyn ScriptChecker,
-    logger: &mut Logger<impl Write>,
+    logger: &mut Logger,
 ) -> Result<()> {
     let step_dir = step.directory();
 
     let mut run_step_script =
-        |name: &str, script: &Option<Script>, logger: &mut Logger<_>| -> Result<()> {
+        |name: &str, script: &Option<Script>, logger: &mut Logger| -> Result<()> {
             if let Some(script) = script {
                 logger.log(&format!("⚙️ PROGRESS Running {name}..."))?;
                 match run_script(script, step_dir, Some(script_checker), logger.out) {
@@ -342,6 +339,7 @@ mod tests {
     use crate::system::shell::mock_available_shells;
 
     use super::*;
+    use crate::config::StepSelectionReason::MatchedFilter;
     use crate::runner::script_checker::DefaultScriptChecker;
     use crate::system::pkg::PackageSource;
     use rstest::rstest;
@@ -389,6 +387,7 @@ mod tests {
                 code: "cat file.txt".to_string(),
             }),
             source_file: step_path.clone(),
+            selection_reason: Some(MatchedFilter),
             ..Default::default()
         }];
 
@@ -396,14 +395,14 @@ mod tests {
             .expect("Failed to write temp file");
 
         let _ = run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
+            &steps,
             &RunParameters {
                 dry_run: false,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
+            None,
             &mut io::sink(),
         )?;
         Ok(())
@@ -420,18 +419,19 @@ mod tests {
                 shell: Some(Shell::PowerShellCore),
                 code: "cat file.txt".to_string(),
             }),
+            selection_reason: Some(MatchedFilter),
             ..Default::default()
         }];
 
         let plan = run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
+            &steps,
             &RunParameters {
                 dry_run: true,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
+            None,
             &mut output,
         )?
         .unwrap();
@@ -464,18 +464,19 @@ mod tests {
             id: "step".to_string(),
             packages: vec!["git".to_string()],
             package_source: Some(PackageSource::Manager(PackageManager::Choco)),
+            selection_reason: Some(MatchedFilter),
             ..Default::default()
         }];
 
         let plan = run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
+            &steps,
             &RunParameters {
                 dry_run: true,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
+            None,
             &mut output,
         )?
         .unwrap();
@@ -487,81 +488,6 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .installed
-        );
-        Ok(())
-    }
-
-    #[rstest]
-    #[case(1)]
-    #[case(2)]
-    fn test_run_dry_when_script_exit_nonzero_skips_step(#[case] exit_code: i32) -> Result<()> {
-        let mut output = Vec::new();
-        mock_available_shells(HashSet::from_iter([Shell::Bash]));
-
-        let steps = vec![config::Step {
-            id: "step".to_string(),
-            when_script: Some(config::Script {
-                shell: Some(Shell::Bash),
-                code: format!("exit {exit_code}").to_string(),
-            }),
-            source_file: "/file.yaml".to_string(),
-            ..Default::default()
-        }];
-
-        let plan = run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
-            &RunParameters {
-                dry_run: true,
-                source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
-            },
-            &FakeStateSaver,
-            &mut DefaultScriptChecker::new(),
-            &mut output,
-        )?
-        .unwrap();
-
-        assert!(plan.steps_to_run.is_empty());
-        assert!(plan.steps_skipped_by_when.contains(&steps[0].id));
-        Ok(())
-    }
-
-    #[rstest]
-    #[case(1)]
-    #[case(2)]
-    fn test_run_when_script_exit_nonzero_skips_step(#[case] exit_code: i32) -> Result<()> {
-        let mut output = Vec::new();
-
-        let steps = vec![config::Step {
-            id: "step".to_string(),
-            when_script: Some(config::Script {
-                shell: Some(Shell::Bash),
-                code: format!("exit {exit_code}").to_string(),
-            }),
-            source_file: "/file.yaml".to_string(),
-            ..Default::default()
-        }];
-
-        run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
-            &RunParameters {
-                dry_run: false,
-                source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
-            },
-            &FakeStateSaver,
-            &mut DefaultScriptChecker::new(),
-            &mut output,
-        )?;
-
-        let output = String::from_utf8_lossy(&output);
-
-        assert!(
-            output.contains(&format!(
-                "skipped due to when-script returning exit code {exit_code}"
-            )),
-            "{}",
-            output
         );
         Ok(())
     }
@@ -582,18 +508,19 @@ mod tests {
                 code: "exit 1".to_string(),
             }),
             source_file: "/file.yaml".to_string(),
+            selection_reason: Some(MatchedFilter),
             ..Default::default()
         }];
 
         let res = run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
+            &steps,
             &RunParameters {
                 dry_run: false,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
+            None,
             &mut output,
         );
 
@@ -609,35 +536,63 @@ mod tests {
     }
 
     #[test]
-    fn test_run_dry_when_script_exit_zero_runs_step() -> Result<()> {
+    #[cfg(unix)]
+    fn test_run_already_completed_dependencies() -> Result<()> {
         let mut output = Vec::new();
-        mock_available_shells(HashSet::from_iter([Shell::Bash]));
 
-        let steps = vec![config::Step {
-            id: "step".to_string(),
-            when_script: Some(config::Script {
-                shell: Some(Shell::Bash),
-                code: "exit 0".to_string(),
-            }),
-            source_file: "/file.yaml".to_string(),
-            ..Default::default()
-        }];
+        let steps = vec![
+            config::Step {
+                id: "step".to_string(),
+                script: Some(config::Script {
+                    shell: Some(Shell::Bash),
+                    code: "exit 0".to_string(),
+                }),
+                check_script: Some(config::Script {
+                    shell: Some(Shell::Bash),
+                    code: "exit 0".to_string(),
+                }),
+                source_file: "/file.yaml".to_string(),
+                selection_reason: Some(MatchedFilter),
+                dependency_of: vec!["step2".to_string()],
+                ..Default::default()
+            },
+            config::Step {
+                id: "step2".to_string(),
+                script: Some(config::Script {
+                    shell: Some(Shell::Bash),
+                    code: "exit 0".to_string(),
+                }),
+                source_file: "/file.yaml".to_string(),
+                selection_reason: Some(MatchedFilter),
+                dependencies: vec!["step".to_string()],
+                ..Default::default()
+            },
+        ];
 
-        let plan = run(
-            &steps.iter().collect::<Vec<&config::Step>>(),
+        let res = run(
+            &steps,
             &RunParameters {
-                dry_run: true,
+                dry_run: false,
                 source_file_path: Path::new("/file.yaml").to_path_buf(),
-                interactive: false,
             },
             &FakeStateSaver,
             &mut DefaultScriptChecker::new(),
+            None,
             &mut output,
-        )?
-        .unwrap();
+        )?;
 
-        assert!(!plan.steps_to_run.is_empty());
-        assert!(plan.steps_skipped_by_when.is_empty());
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(
+            output_str.contains("Step 'step' already completed"),
+            "unexpected output: {}",
+            output_str
+        );
+        assert!(
+            output_str.contains("Step 'step2' completed"),
+            "unexpected output: {}",
+            output_str
+        );
+
         Ok(())
     }
 
@@ -695,10 +650,7 @@ mod tests {
             }),
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Apt,
-            packages: vec![],
-            when_script: None,
-            pre_script: None,
-            script: None,
+            ..Default::default()
         };
 
         let result = step.is_completed(None)?;
@@ -730,9 +682,7 @@ mod tests {
                 name: "pkg".to_string(),
                 used_alias: false,
             }],
-            when_script: None,
-            script: None,
-            check_script: None,
+            ..Default::default()
         };
 
         let result = step.is_completed(None)?;
@@ -754,16 +704,13 @@ mod tests {
         }
         let step = Step {
             id: "test".to_string(),
-            pre_script: None,
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Apt,
-            packages: vec![],
-            when_script: None,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),
             }),
-            check_script: None,
+            ..Default::default()
         };
 
         let result = step.is_completed(None)?;
@@ -780,19 +727,17 @@ mod tests {
     fn test_is_completed_script_package_manager_not_installed() -> Result<()> {
         let step = Step {
             id: "test".to_string(),
-            pre_script: None,
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Choco,
             packages: vec![Package {
                 name: "pkg".to_string(),
                 used_alias: false,
             }],
-            when_script: None,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),
             }),
-            check_script: None,
+            ..Default::default()
         };
 
         let result = step.is_completed(None)?;

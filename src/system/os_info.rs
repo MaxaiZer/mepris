@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::system::pkg::PackageManager;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use once_cell::sync::Lazy;
 
 pub static OS_INFO: Lazy<OsInfo> = Lazy::new(|| get_os_info().expect("Failed to get OS info"));

@@ -5,10 +5,10 @@ use commands::{completion, list_steps, list_tags, resume, run};
 
 pub mod cli;
 pub mod commands;
-mod config;
-mod helpers;
-mod runner;
+pub mod config;
+pub mod runner;
 pub mod system;
+mod utils;
 
 pub fn run(cli: crate::cli::Cli, out: &mut impl Write) -> Result<()> {
     match cli.command {

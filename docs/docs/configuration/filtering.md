@@ -20,8 +20,10 @@ Step has optional `when` field to define script that used as a condition check; 
 See [scripts](config-structure.md#scripts) for possible fields
 :::warning
 All when-scripts are executed at the start of run. So:
-- If they are using not default system shell, make sure to install it first.  
-- You can't use when-script to depend on another step result. Use [requires/provides](dependencies.md)
+- If they use a non-default system shell, make sure it is installed first.  
+- You can't use when-script to depend on another step result. Use [requires/provides](dependencies.md)  
+
+They are also executed in dry-run, so they **must not** create side effects.
 :::
 
 Examples:

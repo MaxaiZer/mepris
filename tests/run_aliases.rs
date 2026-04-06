@@ -118,6 +118,63 @@ fn test_run_local_aliases() {
 }
 
 #[test]
+#[cfg(unix)]
+#[serial]
+fn test_run_autoprovides_dont_use_aliases() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let file_path = dir.path().join("file.yaml");
+    let aliases_path = dir.path().join("pkg_aliases.yaml");
+    let mut output = Vec::new();
+    unsafe {
+        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
+        env::set_var("MEPRIS_INSTALL_COMMAND", "echo installing");
+        env::set_var("MEPRIS_IS_INSTALLED_RESULT", "1");
+    }
+
+    fs::write(
+        &file_path,
+        r#"
+        steps:
+          - id: "step1"
+            packages: ["git"]
+            
+          - id: "step2"
+            requires: ["git"]
+        "#,
+    )
+        .expect("Failed to write file.yaml");
+
+    fs::write(
+        &aliases_path,
+        r#"
+        git:
+          apt: git-local
+        "#,
+    )
+        .expect("Failed to write pkg_aliases.yaml");
+
+    let res = handle(
+        RunArgs {
+            file: file_path.to_str().unwrap().to_string(),
+            tags_expr: None,
+            steps: vec![],
+            start_step_id: None,
+            interactive: false,
+            dry_run: false,
+            show_skipped: false
+        },
+        &mut output,
+    );
+    unsafe {
+        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
+        env::remove_var("MEPRIS_INSTALL_COMMAND");
+        env::remove_var("MEPRIS_IS_INSTALLED_RESULT");
+    }
+
+    assert!(res.is_ok(), "error: {}", res.unwrap_err().to_string());
+}
+
+#[test]
 #[serial]
 fn test_dry_run_local_aliases_wrong_file_name() {
     let dir = tempdir().expect("Failed to create temp dir");

@@ -18,7 +18,7 @@ Without it, program cannot determine the completion state, so the step will not 
 :::
 
 :::warning
-There will be an error if more than one step that provide needed `requires` are passed OS / when-script filters.
+An error occurs if multiple steps providing the same required artifact pass the OS and when script filters.
 :::
 
 ## `provides`
@@ -39,7 +39,39 @@ The `provides` field lists **artifacts or capabilities that a step produces**. O
 
 Here, `setup_database` depends on `postgres_installed`, which is produced by `install_postgres`. The program ensures `install_postgres` runs first.
 
----
+### Automatic inference
+
+If a step has `packages` but no `provides`, the `provides` field is automatically set to the package names as declared in `packages`. Package-manager-specific names (see [package aliases](package-aliases.md)
+) are resolved only for installation, not for `provides`.
+
+**Example 1: simple package**
+```yaml
+- id: install_postgres
+  packages: ["postgresql"]
+```
+
+This is equivalent to:
+
+```yaml
+- id: install_postgres
+  packages: ["postgresql"]
+  provides: ["postgresql"]
+```
+
+**Example 2: package with aliases**
+```yaml
+# in pkg_aliases.yaml:
+fd:
+  apt: fd-find
+  dnf: fd-find
+  zypper: fd-find
+
+# in config:
+steps:
+  - id: install_fd
+    packages: ["fd"]
+```
+Here, `provides` is automatically set to `["fd"]`, regardless of the package manager.
 
 ## `requires`
 

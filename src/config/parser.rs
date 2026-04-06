@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 
 pub fn parse(file: &str) -> Result<Vec<Step>> {
     let mut visited_files = HashSet::new();
-    parse_recursive(file, &mut visited_files, None, None)
+    let mut steps = parse_recursive(file, &mut visited_files, None, None)?;
+    normalize_steps(&mut steps);
+    Ok(steps)
 }
 
 fn parse_recursive(
@@ -62,6 +64,14 @@ fn parse_recursive(
     }
 
     Ok(steps)
+}
+
+fn normalize_steps(steps: &mut Vec<Step>) {
+    for step in steps {
+        if step.provides.is_empty() && !step.packages.is_empty() {
+            step.provides = step.packages.clone();
+        }
+    }
 }
 
 #[cfg(test)]

@@ -86,6 +86,20 @@ Step `install_nvim` will only require `nvim-linux-helpers` if the current OS mat
 
 Here, the dependency `setup-systemd` is only required if the `when` script succeeds - current init system is systemd.
 
+## Scope
+
+The `requires` and `provides` fields have **global visibility** across all included YAML files.  
+When a parent configuration uses `includes`:
+
+```yaml
+includes:
+  - first.yaml
+  - second.yaml
+```
+
+All steps in first.yaml, second.yaml, and the parent YAML are merged into a single dependency graph.
+This means a step in one YAML can safely require a step defined in another YAML.
+
 ## Behavior in interactive mode
 
 Interactive mode allows you to skip step dependencies or rerun already completed steps, giving more control over execution flow.

@@ -49,6 +49,12 @@ pub struct RunArgs {
         help = "Enable dry-run mode (no scripts or packages executed)"
     )]
     pub dry_run: bool,
+    #[arg(
+        long,
+        help = "Show steps that would be skipped in dry-run mode",
+        requires = "dry_run"
+    )]
+    pub show_skipped: bool,
 }
 
 #[derive(Args)]
@@ -65,6 +71,12 @@ pub struct ResumeArgs {
         help = "Enable dry-run mode (no scripts or packages executed)"
     )]
     pub dry_run: bool,
+    #[arg(
+        long,
+        help = "Show steps that would be skipped in dry-run mode",
+        requires = "dry_run"
+    )]
+    pub show_skipped: bool,
 }
 
 #[derive(Args)]

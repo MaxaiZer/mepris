@@ -29,6 +29,7 @@ pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
             start_step_id: state.last_step_id,
             interactive,
             dry_run: args.dry_run,
+            show_skipped: args.show_skipped,
         },
         out,
     )

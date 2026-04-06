@@ -35,6 +35,7 @@ steps:
             start_step_id: None,
             interactive: false,
             dry_run: false,
+            show_skipped: false
         },
         &mut io::sink(),
     );
@@ -59,6 +60,7 @@ steps:
         ResumeArgs {
             interactive: false,
             dry_run: false,
+            show_skipped: false
         },
         &mut output,
     );

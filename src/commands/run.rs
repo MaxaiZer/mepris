@@ -72,7 +72,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     if args.dry_run
         && let Some(dry_run_plan) = dry_run_plan
     {
-        print_info(&filter_result.excluded_steps(), &dry_run_plan, out)?;
+        print_info(&filter_result.excluded_steps(), &dry_run_plan, args.show_skipped, out)?;
     }
     Ok(())
 }
@@ -80,6 +80,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
 fn print_info(
     excluded_steps: &[&ExcludedStep],
     dry_run_plan: &dry::RunPlan,
+    show_skipped: bool,
     out: &mut impl Write,
 ) -> Result<()> {
     let has_pulled_dependencies = !dry_run_plan.steps_to_run.is_empty()
@@ -163,35 +164,9 @@ fn print_info(
         writeln!(out, "❌ No steps would be run")?;
     }
 
-    let excluded_steps = excluded_steps.not_excluded_by(ByIds);
-    if !excluded_steps.is_empty() && !dry_run_plan.steps_to_run.is_empty() {
-        writeln!(out)?;
+    if show_skipped {
+        print_excluded(excluded_steps, !dry_run_plan.steps_to_run.is_empty(), out)?;
     }
-
-    let excluded_steps = print_excluded(
-        &excluded_steps,
-        ByTags,
-        "⏭️ Skipped steps due to tag mismatch",
-        out,
-    )?;
-    let excluded_steps = print_excluded(
-        &excluded_steps,
-        ByOs,
-        "⏭️ Skipped steps due to OS mismatch",
-        out,
-    )?;
-    let excluded_steps = print_excluded(
-        &excluded_steps,
-        ByWhenScript,
-        "⏭️ Skipped steps due to failed when-script",
-        out,
-    )?;
-    _ = print_excluded(
-        &excluded_steps,
-        ByStartId,
-        "⏭️ Skipped steps due to resume",
-        out,
-    )?;
 
     Ok(())
 }
@@ -261,6 +236,43 @@ fn print_shells_info(step: &StepRun, out: &mut impl Write) -> Result<()> {
 }
 
 fn print_excluded<'a>(
+    excluded_steps: &'a [&'a ExcludedStep],
+    has_steps_to_run: bool,
+    out: &mut impl Write,
+) -> Result<()> {
+    let excluded_steps = excluded_steps.not_excluded_by(ByIds);
+    if !excluded_steps.is_empty() && has_steps_to_run {
+        writeln!(out)?;
+    }
+
+    let excluded_steps = print_excluded_by_filter(
+        &excluded_steps,
+        ByTags,
+        "⏭️ Skipped steps due to tag mismatch",
+        out,
+    )?;
+    let excluded_steps = print_excluded_by_filter(
+        &excluded_steps,
+        ByOs,
+        "⏭️ Skipped steps due to OS mismatch",
+        out,
+    )?;
+    let excluded_steps = print_excluded_by_filter(
+        &excluded_steps,
+        ByWhenScript,
+        "⏭️ Skipped steps due to failed when-script",
+        out,
+    )?;
+    _ = print_excluded_by_filter(
+        &excluded_steps,
+        ByStartId,
+        "⏭️ Skipped steps due to resume",
+        out,
+    )?;
+    Ok(())
+}
+
+fn print_excluded_by_filter<'a>(
     excluded_steps: &'a [&'a ExcludedStep],
     filter: StepFilter,
     msg: &str,
@@ -375,7 +387,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -415,7 +427,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan,true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("⏭️ Skipped steps due to OS mismatch: step1, step2"));
@@ -455,7 +467,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("⏭️ Skipped steps due to failed when-script: step1, step2"));
@@ -490,7 +502,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -532,7 +544,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -588,7 +600,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -661,7 +673,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -715,7 +727,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -748,7 +760,7 @@ mod tests {
             )],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -773,7 +785,7 @@ mod tests {
             steps_to_run: vec![],
         };
 
-        print_info(&filter_res.excluded_steps(), &dry_run_plan, &mut output).unwrap();
+        print_info(&filter_res.excluded_steps(), &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(
@@ -807,7 +819,7 @@ mod tests {
             ],
         };
 
-        print_info(&excluded_steps, &dry_run_plan, &mut output).unwrap();
+        print_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("[PULLED DEPENDENCIES]"));
@@ -837,7 +849,7 @@ mod tests {
             ],
         };
 
-        print_info(&excluded_steps, &dry_run_plan, &mut output).unwrap();
+        print_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("dependency of step2"));
@@ -856,7 +868,7 @@ mod tests {
             )],
         };
 
-        print_info(&excluded_steps, &dry_run_plan, &mut output).unwrap();
+        print_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
 
         let clean = strip_ansi_escapes::strip(output.into_inner());
         let output_str = String::from_utf8(clean).unwrap();
@@ -881,7 +893,7 @@ mod tests {
             steps_to_run: vec![step_run],
         };
 
-        print_info(&excluded_steps_ref, &dry_run_plan, &mut output).unwrap();
+        print_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
 
         let clean = strip_ansi_escapes::strip(output.into_inner());
         let output_str = String::from_utf8(clean).unwrap();
@@ -921,7 +933,7 @@ mod tests {
             steps_to_run: vec![step_run],
         };
 
-        print_info(&excluded_steps_ref, &dry_run_plan, &mut output).unwrap();
+        print_info(&excluded_steps_ref, &dry_run_plan,true, &mut output).unwrap();
 
         let clean = strip_ansi_escapes::strip(output.into_inner());
         let output_str = String::from_utf8(clean).unwrap();
@@ -961,7 +973,7 @@ mod tests {
             steps_to_run: vec![step_run],
         };
 
-        print_info(&excluded_steps_ref, &dry_run_plan, &mut output).unwrap();
+        print_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(

@@ -42,6 +42,7 @@ fn test_dry_run_local_aliases() {
             start_step_id: None,
             interactive: false,
             dry_run: true,
+            show_skipped: true
         },
         &mut output,
     );
@@ -98,6 +99,7 @@ fn test_run_local_aliases() {
             start_step_id: None,
             interactive: false,
             dry_run: false,
+            show_skipped: false
         },
         &mut output,
     );
@@ -153,6 +155,7 @@ fn test_dry_run_local_aliases_wrong_file_name() {
             start_step_id: None,
             interactive: false,
             dry_run: true,
+            show_skipped: true
         },
         &mut output,
     );
@@ -209,6 +212,7 @@ fn test_dry_run_global_aliases() {
             start_step_id: None,
             interactive: false,
             dry_run: true,
+            show_skipped: true
         },
         &mut output,
     );
@@ -279,6 +283,7 @@ fn test_dry_run_local_aliases_override_global() {
             start_step_id: None,
             interactive: false,
             dry_run: true,
+            show_skipped: true
         },
         &mut output,
     );
@@ -335,6 +340,7 @@ fn test_dry_run_aliases_manager_overridden() {
             start_step_id: None,
             interactive: false,
             dry_run: true,
+            show_skipped: true
         },
         &mut output,
     );

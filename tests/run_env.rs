@@ -34,7 +34,7 @@ steps:
             start_step_id: None,
             interactive: false,
             dry_run: true,
-            show_skipped: true
+            show_skipped: true,
         },
         &mut io::sink(),
     );
@@ -78,7 +78,7 @@ steps:
             start_step_id: None,
             interactive: false,
             dry_run: true,
-            show_skipped: true
+            show_skipped: true,
         },
         &mut io::sink(),
     );
@@ -120,7 +120,7 @@ steps:
             start_step_id: None,
             interactive: false,
             dry_run: true,
-            show_skipped: true
+            show_skipped: true,
         },
         &mut io::sink(),
     );
@@ -161,7 +161,7 @@ steps:
             start_step_id: None,
             interactive: false,
             dry_run: false,
-            show_skipped: true
+            show_skipped: true,
         },
         &mut output,
     );
@@ -198,7 +198,7 @@ steps:
             start_step_id: None,
             interactive: false,
             dry_run: false,
-            show_skipped: false
+            show_skipped: false,
         },
         &mut io::sink(),
     );

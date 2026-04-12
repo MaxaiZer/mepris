@@ -92,13 +92,14 @@ pub fn toposort_steps(
     }
 }
 
-fn fill_providers(steps: &[Step], providers: &mut HashMap<String, Vec<usize>>) -> anyhow::Result<()> {
+fn fill_providers(
+    steps: &[Step],
+    providers: &mut HashMap<String, Vec<usize>>,
+) -> anyhow::Result<()> {
     for (i, step) in steps.iter().enumerate() {
-
         let mut checked_step_providers: HashSet<String> = HashSet::new();
 
         for provide in &step.provides {
-
             if checked_step_providers.contains(provide) {
                 bail!("duplicated provide '{}' in step '{}'", provide, step.id);
             }
@@ -120,6 +121,7 @@ fn add_dependencies(
     let mut checked: HashSet<usize> = HashSet::new();
 
     for i in 0..steps.len() {
+        // matched steps are added before skipped
         if steps[i].selection_reason != Some(StepSelectionReason::MatchedFilter) {
             break;
         }
@@ -167,11 +169,9 @@ fn push_step_dependencies(
     stack: &mut Vec<usize>,
     checked: &mut HashSet<usize>,
 ) -> anyhow::Result<()> {
-
     let mut checked_step_requires: HashSet<String> = HashSet::new();
 
     for require in &step.requires {
-
         if checked_step_requires.contains(&require.id) {
             bail!("duplicated require '{}' in step '{}'", require.id, step.id);
         }
@@ -567,7 +567,11 @@ mod tests {
 
         assert!(result.is_err());
         let err_str = result.unwrap_err().to_string();
-        assert!(err_str.contains("duplicated require 'postgres' in step 'step1'"), "unexpected err: {}", err_str);
+        assert!(
+            err_str.contains("duplicated require 'postgres' in step 'step1'"),
+            "unexpected err: {}",
+            err_str
+        );
     }
 
     #[test]
@@ -579,7 +583,11 @@ mod tests {
 
         assert!(result.is_err());
         let err_str = result.unwrap_err().to_string();
-        assert!(err_str.contains("duplicated provide 'postgres' in step 'step1'"), "unexpected err: {}", err_str);
+        assert!(
+            err_str.contains("duplicated provide 'postgres' in step 'step1'"),
+            "unexpected err: {}",
+            err_str
+        );
     }
 
     #[test]

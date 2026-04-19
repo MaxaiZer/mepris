@@ -38,10 +38,6 @@ pub fn install_packages(
         bail!("Package manager {} not found", manager);
     }
 
-    logger.log(&format!(
-        "📦 PROGRESS Installing packages: {}",
-        packages.join(", ")
-    ))?;
-
+    logger.log_with_progress(|p| format!("📦 {p} Installing packages: {}", packages.join(", ")))?;
     manager.install(packages)
 }

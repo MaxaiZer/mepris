@@ -15,7 +15,14 @@ impl<'a> Logger<'a> {
         }
     }
 
-    pub fn log(&mut self, str: &str) -> std::io::Result<()> {
+    pub fn log(&mut self, msg: &str) -> std::io::Result<()> {
+        writeln!(self.out, "{}", msg)
+    }
+
+    pub fn log_with_progress<F>(&mut self, f: F) -> std::io::Result<()>
+    where
+        F: FnOnce(&str) -> String,
+    {
         let width = self.steps_count.to_string().len();
         let progress = format!(
             "[{:>width$}/{}]",
@@ -24,6 +31,7 @@ impl<'a> Logger<'a> {
             width = width
         );
 
-        writeln!(self.out, "{}", str.replace("PROGRESS", &progress))
+        let msg = f(&progress);
+        writeln!(self.out, "{}", msg)
     }
 }

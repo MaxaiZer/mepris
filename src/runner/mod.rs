@@ -230,10 +230,9 @@ pub fn run(
                 Decision::LeaveInteractiveMode => interactive = false,
             }
         } else if completion == StepCompletedResult::Completed {
-            logger.log(&format!(
-                "✅ PROGRESS Step '{}' already completed, skipping",
-                step.id
-            ))?;
+            logger.log_with_progress(|p| {
+                format!("✅ {p} Step '{}' already completed, skipping", step.id)
+            })?;
             continue;
         }
 
@@ -241,9 +240,9 @@ pub fn run(
             bail!("cannot run step with broken dependencies without interactive mode")
         }
 
-        logger.log(&format!("🚀 PROGRESS Running step '{}'...", step.id))?;
+        logger.log_with_progress(|p| format!("🚀 {p} Running step '{}'...", step.id))?;
         run_step(step, script_checker, &mut logger)?;
-        logger.log(&format!("✅ PROGRESS Step '{}' completed", step.id))?;
+        logger.log_with_progress(|p| format!("✅ {p} Step '{}' completed", step.id))?;
 
         if has_broken_deps {
             execution_results.insert(step.id.clone(), ExecutionResult::CompletedWithMissingDeps);
@@ -303,7 +302,7 @@ fn run_step(
     let mut run_step_script =
         |name: &str, script: &Option<Script>, logger: &mut Logger| -> Result<()> {
             if let Some(script) = script {
-                logger.log(&format!("⚙️ PROGRESS Running {name}..."))?;
+                logger.log_with_progress(|p| format!("⚙️ {p} Running {name}..."))?;
                 match run_script(script, step_dir, Some(script_checker), logger.out) {
                     Ok(ScriptResult::Success) => return Ok(()),
                     Ok(ScriptResult::NotZeroExitStatus(code)) => {

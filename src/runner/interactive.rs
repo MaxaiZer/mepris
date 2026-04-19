@@ -74,10 +74,8 @@ pub fn ask_confirmation(
         .collect();
 
     print_step(step, has_broken_deps, completion, &mut logger.out, false)?;
-    logger.log(&format!(
-        "\nPROGRESS What do you want to do? ({}): ",
-        cmds.join(", ")
-    ))?;
+    logger
+        .log_with_progress(|p| format!("\n{p} What do you want to do? ({}): ", cmds.join(", ")))?;
 
     loop {
         logger.out.flush()?;
@@ -98,10 +96,9 @@ pub fn ask_confirmation(
             "l" => return Ok(Decision::LeaveInteractiveMode),
             "v" => {
                 print_step(step, has_broken_deps, completion, &mut logger.out, true)?;
-                logger.log(&format!(
-                    "\nPROGRESS What do you want to do? ({}): ",
-                    cmds.join(", ")
-                ))?;
+                logger.log_with_progress(|p| {
+                    format!("\n{p} What do you want to do? ({}): ", cmds.join(", "))
+                })?;
             }
             _ => logger.log("Invalid input, please try again.")?,
         }

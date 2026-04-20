@@ -1,14 +1,14 @@
-use super::utils::{RunStateSaver, check_env, check_unique_id, load_env};
+use super::utils::{RunStateSaver, check_env, load_env};
 use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByStartId, ByTags, ByWhenScript};
 use crate::commands::utils::filters::{ExcludedStep, ExcludedStepVecExt, StepFilter, filter_steps};
 use crate::commands::utils::sort::toposort_steps;
 use crate::config::StepSelectionReason;
-use crate::config::parser::{self};
 use crate::runner::dry::StepRun;
 use crate::runner::script_checker::DefaultScriptChecker;
 use crate::runner::{CliInteractor, Interactor, StepCompletedResult};
 use crate::{
     cli::RunArgs,
+    config,
     config::Step,
     runner::{self, dry},
     system::os_info::OS_INFO,
@@ -36,12 +36,10 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
         None
     };
 
-    let steps = parser::parse(&args.file)?;
+    let steps = config::load_steps(&args.file)?;
     if steps.is_empty() {
         bail!("The file doesn't contain any steps");
     }
-
-    check_unique_id(&steps)?;
 
     let filter_result = filter_steps(
         &steps,

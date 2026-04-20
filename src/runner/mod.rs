@@ -15,10 +15,10 @@ pub mod state;
 
 pub use interactive::{CliInteractor, Decision, Interactor};
 
-use crate::{config, config::alias::load_aliases};
+use crate::{config, config::aliases::load_aliases};
 
 use crate::config::StepSelectionReason;
-use crate::config::alias::PackageAliases;
+use crate::config::aliases::PackageAliases;
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
 pub(crate) use crate::runner::script::{
     Script, ScriptResult, run_noninteractive_script, run_script,

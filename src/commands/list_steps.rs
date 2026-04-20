@@ -1,8 +1,7 @@
 use std::{collections::HashSet, io::Write, path::Path};
 
-use super::utils::check_unique_id;
 use crate::commands::utils::filters::{filter_by_os, filter_by_tags};
-use crate::config::parser;
+use crate::config;
 use crate::{
     cli::ListStepsArgs,
     config::{Step, expr::eval_os_expr},
@@ -16,8 +15,7 @@ use comfy_table::{
 };
 
 pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
-    let steps = parser::parse(&args.file)?;
-    check_unique_id(&steps)?;
+    let steps = config::load_steps(&args.file)?;
 
     let mut steps = steps.iter().collect::<Vec<&Step>>();
     if !args.all {

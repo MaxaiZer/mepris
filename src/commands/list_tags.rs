@@ -1,14 +1,11 @@
 use std::io::Write;
 
-use super::utils::check_unique_id;
 use crate::commands::utils::filters::filter_by_os;
-use crate::config::parser;
-use crate::{cli::ListTagsArgs, config::Step, system::os_info::OS_INFO};
+use crate::{cli::ListTagsArgs, config, config::Step, system::os_info::OS_INFO};
 use anyhow::Result;
 
 pub fn handle(args: ListTagsArgs, out: &mut impl Write) -> Result<()> {
-    let steps = parser::parse(&args.file)?;
-    check_unique_id(&steps)?;
+    let steps = config::load_steps(&args.file)?;
 
     let mut steps = steps.iter().collect::<Vec<&Step>>();
     steps = filter_by_os(&steps, &OS_INFO).map(|res| res.matching)?;

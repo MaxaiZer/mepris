@@ -32,6 +32,7 @@ impl<'a> AllFiltersResult<'a> {
             });
     }
 
+    #[cfg(test)]
     pub fn excluded_by(&self, filter: StepFilter) -> Vec<&'a Step> {
         self.excluded_steps
             .values()

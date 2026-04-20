@@ -120,18 +120,18 @@ fn add_dependencies(
     let mut stack: Vec<usize> = Vec::new();
     let mut checked: HashSet<usize> = HashSet::new();
 
-    for i in 0..steps.len() {
+    for (i, step) in steps.iter().enumerate() {
         // matched steps are added before skipped
-        if steps[i].selection_reason != Some(StepSelectionReason::MatchedFilter) {
+        if step.selection_reason != Some(StepSelectionReason::MatchedFilter) {
             break;
         }
 
-        if steps[i].requires.is_empty() {
+        if step.requires.is_empty() {
             continue;
         }
 
         push_step_dependencies(
-            &steps[i],
+            step,
             i,
             providers,
             self_references,

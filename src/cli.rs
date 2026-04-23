@@ -23,7 +23,7 @@ pub enum Commands {
     Completion(CompletionArgs),
 }
 
-#[derive(Args)]
+#[derive(Args, Default)]
 pub struct RunArgs {
     #[arg(short, long, required = true, help = "Path to configuration YAML file")]
     pub file: String,

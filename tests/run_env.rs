@@ -1,5 +1,5 @@
-use mepris::{cli::RunArgs, commands::run::handle};
-use std::{env, fs, io};
+use mepris::{EnvGuard, cli::RunArgs, commands::run::handle};
+use std::{fs, io};
 use tempfile::tempdir;
 
 #[test]
@@ -10,31 +10,27 @@ fn test_env_not_exists() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    env: ["PATH1"]
-    script: |
-      end=$((SECONDS+10))
-      i=1
-
-      while [ $SECONDS -lt $end ]; do
-        i=$((i+1))
-        echo $PATH1
-        sleep 1
-      done
-"#,
+        steps:
+          - id: "step1"
+            env: ["PATH1"]
+            script: |
+              end=$((SECONDS+10))
+              i=1
+        
+              while [ $SECONDS -lt $end ]; do
+                i=$((i+1))
+                echo $PATH1
+                sleep 1
+              done
+        "#,
     )
     .expect("Failed to write file.yaml");
 
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut io::sink(),
     );
@@ -52,33 +48,29 @@ fn test_env_exists() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    env: ["PATH2"]
-    script: |
-      end=$((SECONDS+10))
-      i=1
-
-      while [ $SECONDS -lt $end ]; do
-        i=$((i+1))
-        echo $PATH2
-        sleep 1
-      done
-"#,
+        steps:
+          - id: "step1"
+            env: ["PATH2"]
+            script: |
+              end=$((SECONDS+10))
+              i=1
+        
+              while [ $SECONDS -lt $end ]; do
+                i=$((i+1))
+                echo $PATH2
+                sleep 1
+              done
+        "#,
     )
     .expect("Failed to write file.yaml");
 
-    unsafe { env::set_var("PATH2", "something") };
+    let _guard = EnvGuard::new("PATH2", "something");
 
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut io::sink(),
     );
@@ -94,19 +86,19 @@ fn test_env_from_file() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    env: ["PATH3"]
-    script: |
-      end=$((SECONDS+10))
-      i=1
+        steps:
+          - id: "step1"
+            env: ["PATH3"]
+            script: |
+              end=$((SECONDS+10))
+              i=1
 
-      while [ $SECONDS -lt $end ]; do
-        i=$((i+1))
-        echo $PATH3
-        sleep 1
-      done
-"#,
+              while [ $SECONDS -lt $end ]; do
+                i=$((i+1))
+                echo $PATH3
+                sleep 1
+              done
+        "#,
     )
     .expect("Failed to write file.yaml");
 
@@ -115,12 +107,8 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut io::sink(),
     );
@@ -138,30 +126,23 @@ fn test_env_from_file_overrides_existing() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    env: ["PATH4"]
-    script: |
-        echo "PATH4=$PATH4"
-"#,
+        steps:
+          - id: "step1"
+            env: ["PATH4"]
+            script: |
+                echo "PATH4=$PATH4"
+        "#,
     )
     .expect("Failed to write file.yaml");
 
-    unsafe {
-        env::set_var("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
-        env::set_var("PATH4", "old_value")
-    };
+    let _guard = EnvGuard::new("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
+    let _guard2 = EnvGuard::new("PATH4", "old_value");
     fs::write(&env_file_path, "PATH4=new_value").expect("Failed to write .env");
 
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
-            dry_run: false,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );
@@ -179,12 +160,12 @@ fn test_invalid_env_file() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-    env: ["PATH5"]
-    script: |
-        echo "PATH5=$PATH5"
-"#,
+        steps:
+          - id: "step1"
+            env: ["PATH5"]
+            script: |
+                echo "PATH5=$PATH5"
+        "#,
     )
     .expect("Failed to write file.yaml");
 
@@ -193,12 +174,7 @@ steps:
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
-            dry_run: false,
-            show_skipped: false,
+            ..Default::default()
         },
         &mut io::sink(),
     );

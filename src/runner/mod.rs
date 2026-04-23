@@ -338,6 +338,7 @@ mod tests {
     use crate::system::shell::mock_available_shells;
 
     use super::*;
+    use crate::EnvGuard;
     use crate::config::StepSelectionReason::MatchedFilter;
     use crate::runner::script_checker::DefaultScriptChecker;
     use crate::system::pkg::PackageSource;
@@ -638,9 +639,7 @@ mod tests {
     fn test_is_completed_check_script_nonzero_exit_returns_failed(
         #[case] exit_code: i32,
     ) -> Result<()> {
-        unsafe {
-            env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;");
-        }
+        let _guard = EnvGuard::new("MEPRIS_INSTALL_COMMAND", "exit 0;");
         let step = Step {
             id: "test".to_string(),
             check_script: Some(Script {
@@ -653,9 +652,6 @@ mod tests {
         };
 
         let result = step.is_completed(None)?;
-        unsafe {
-            env::remove_var("MEPRIS_INSTALL_COMMAND");
-        }
 
         assert_eq!(result, StepCompletedResult::FailedCheckScript);
         Ok(())
@@ -664,10 +660,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_completed_pre_script_doesnt_require_check_script() -> Result<()> {
-        unsafe {
-            env::set_var("MEPRIS_IS_INSTALLED_RESULT", "0");
-            env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;");
-        }
+        let _guard = EnvGuard::new("MEPRIS_IS_INSTALLED_RESULT", "0");
+        let _guard2 = EnvGuard::new("MEPRIS_INSTALL_COMMAND", "exit 0;");
 
         let step = Step {
             id: "test".to_string(),
@@ -686,11 +680,6 @@ mod tests {
 
         let result = step.is_completed(None)?;
 
-        unsafe {
-            env::remove_var("MEPRIS_IS_INSTALLED_RESULT");
-            env::remove_var("MEPRIS_INSTALL_COMMAND");
-        }
-
         assert_eq!(result, StepCompletedResult::Completed);
         Ok(())
     }
@@ -698,9 +687,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_completed_script_requires_check_script() -> Result<()> {
-        unsafe {
-            env::set_var("MEPRIS_INSTALL_COMMAND", "exit 0;");
-        }
+        let _guard = EnvGuard::new("MEPRIS_INSTALL_COMMAND", "exit 0;");
         let step = Step {
             id: "test".to_string(),
             source_file: "/test.yaml".to_string(),
@@ -713,9 +700,6 @@ mod tests {
         };
 
         let result = step.is_completed(None)?;
-        unsafe {
-            env::remove_var("MEPRIS_INSTALL_COMMAND");
-        }
 
         assert_eq!(result, StepCompletedResult::HasScriptWithoutCheck);
         Ok(())

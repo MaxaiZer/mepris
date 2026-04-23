@@ -1,8 +1,10 @@
 use mepris::{
+    EnvGuard,
     cli::{ResumeArgs, RunArgs},
     commands::{resume, run::handle},
+    run_with_cwd,
 };
-use std::{env, fs, io};
+use std::{fs, io};
 use tempfile::tempdir;
 
 #[test]
@@ -11,49 +13,40 @@ fn test_resume_uses_absolute_path() {
     let file_path = dir.path().join("file.yaml");
     let state_file_path = dir.path().join("state.json");
 
-    let original_dir = env::current_dir().expect("Failed to get current dir");
-    env::set_current_dir(&dir).expect("Failed to change directory");
+    fs::write(
+        &file_path,
+        r#"
+        steps:
+          - id: "step"
+            script: |
+              echo "didn't clone bracket
+        "#,
+    )
+    .expect("Failed to write file.yaml");
 
-    unsafe { env::set_var("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap()) };
+    let _guard = EnvGuard::new("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
+    run_with_cwd(dir.path(), || {
+        let res = handle(
+            RunArgs {
+                file: "./file.yaml".to_string(),
+                ..Default::default()
+            },
+            &mut io::sink(),
+        );
+
+        assert!(res.is_err());
+    });
 
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step"
-    script: |
-      echo "didn't clone bracket
-"#,
+        steps:
+          - id: "step"
+            script: |
+              echo "fixed bracket"
+        "#,
     )
     .expect("Failed to write file.yaml");
-
-    let res = handle(
-        RunArgs {
-            file: "./file.yaml".to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
-            dry_run: false,
-            show_skipped: false,
-        },
-        &mut io::sink(),
-    );
-
-    assert!(res.is_err());
-
-    fs::write(
-        &file_path,
-        r#"
-steps:
-  - id: "step"
-    script: |
-      echo "fixed bracket"
-"#,
-    )
-    .expect("Failed to write file.yaml");
-
-    env::set_current_dir(original_dir).expect("Failed to restore directory");
 
     let mut output = Vec::new();
     let res = resume::handle(
@@ -75,6 +68,4 @@ steps:
         output.contains("fixed bracket"),
         "output doesn't contain 'fixed bracket': {output}"
     );
-
-    unsafe { env::remove_var("MEPRIS_STATE_PATH") };
 }

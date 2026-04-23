@@ -1,6 +1,6 @@
-use std::{env, fs};
+use std::fs;
 
-use mepris::{cli::RunArgs, commands::run::handle};
+use mepris::{EnvGuard, cli::RunArgs, commands::run::handle};
 use serial_test::serial;
 use tempfile::tempdir;
 
@@ -11,9 +11,7 @@ fn test_dry_run_local_aliases() {
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
-    }
+    let _guard = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
 
     fs::write(
         &file_path,
@@ -37,19 +35,12 @@ fn test_dry_run_local_aliases() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe {
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-    }
 
     assert!(res.is_ok());
     assert!(
@@ -66,11 +57,9 @@ fn test_run_local_aliases() {
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
-        env::set_var("MEPRIS_INSTALL_COMMAND", "echo installing");
-        env::set_var("MEPRIS_IS_INSTALLED_RESULT", "1");
-    }
+    let _guard = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
+    let _guard2 = EnvGuard::new("MEPRIS_INSTALL_COMMAND", "echo installing");
+    let _guard3 = EnvGuard::new("MEPRIS_IS_INSTALLED_RESULT", "1");
 
     fs::write(
         &file_path,
@@ -94,21 +83,11 @@ fn test_run_local_aliases() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
-            dry_run: false,
-            show_skipped: false,
+            ..Default::default()
         },
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe {
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-        env::remove_var("MEPRIS_INSTALL_COMMAND");
-        env::remove_var("MEPRIS_IS_INSTALLED_RESULT");
-    }
 
     assert!(res.is_ok(), "error: {}", res.unwrap_err().to_string());
     assert!(
@@ -125,11 +104,9 @@ fn test_run_autoprovides_dont_use_aliases() {
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
-        env::set_var("MEPRIS_INSTALL_COMMAND", "echo installing");
-        env::set_var("MEPRIS_IS_INSTALLED_RESULT", "1");
-    }
+    let _guard = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
+    let _guard2 = EnvGuard::new("MEPRIS_INSTALL_COMMAND", "echo installing");
+    let _guard3 = EnvGuard::new("MEPRIS_IS_INSTALLED_RESULT", "1");
 
     fs::write(
         &file_path,
@@ -156,20 +133,10 @@ fn test_run_autoprovides_dont_use_aliases() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
-            dry_run: false,
-            show_skipped: false,
+            ..Default::default()
         },
         &mut output,
     );
-    unsafe {
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-        env::remove_var("MEPRIS_INSTALL_COMMAND");
-        env::remove_var("MEPRIS_IS_INSTALLED_RESULT");
-    }
 
     assert!(res.is_ok(), "error: {}", res.unwrap_err().to_string());
 }
@@ -181,9 +148,7 @@ fn test_dry_run_local_aliases_wrong_file_name() {
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
-    }
+    let _guard = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
 
     fs::write(
         &file_path,
@@ -207,19 +172,12 @@ fn test_dry_run_local_aliases_wrong_file_name() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe {
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-    }
 
     assert!(res.is_ok());
     assert!(
@@ -237,10 +195,8 @@ fn test_dry_run_global_aliases() {
     fs::create_dir_all(aliases_path.parent().unwrap())
         .expect("Failed to create folder for aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var("MEPRIS_GLOBAL_ALIASES_PATH", aliases_path.to_str().unwrap());
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
-    }
+    let _guard = EnvGuard::new("MEPRIS_GLOBAL_ALIASES_PATH", aliases_path.to_str().unwrap());
+    let _guard2 = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
 
     fs::write(
         &file_path,
@@ -264,20 +220,12 @@ fn test_dry_run_global_aliases() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe {
-        env::remove_var("MEPRIS_GLOBAL_ALIASES_PATH");
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-    };
 
     assert!(res.is_ok());
     assert!(
@@ -296,13 +244,11 @@ fn test_dry_run_local_aliases_override_global() {
     fs::create_dir_all(global_aliases_path.parent().unwrap())
         .expect("Failed to create folder for aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var(
-            "MEPRIS_GLOBAL_ALIASES_PATH",
-            global_aliases_path.to_str().unwrap(),
-        );
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
-    };
+    let _guard = EnvGuard::new(
+        "MEPRIS_GLOBAL_ALIASES_PATH",
+        global_aliases_path.to_str().unwrap(),
+    );
+    let _guard2 = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
 
     fs::write(
         &file_path,
@@ -335,20 +281,12 @@ fn test_dry_run_local_aliases_override_global() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe {
-        env::remove_var("MEPRIS_GLOBAL_ALIASES_PATH");
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-    };
 
     assert!(res.is_ok());
     assert!(
@@ -364,9 +302,7 @@ fn test_dry_run_aliases_manager_overridden() {
     let file_path = dir.path().join("file.yaml");
     let local_aliases_path = dir.path().join("pkg_aliases.yaml");
     let mut output = Vec::new();
-    unsafe {
-        env::set_var("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
-    };
+    let _guard = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "Apt");
 
     fs::write(
         &file_path,
@@ -392,19 +328,12 @@ fn test_dry_run_aliases_manager_overridden() {
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
-            steps: vec![],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
-            show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );
     let output = String::from_utf8_lossy(&output);
-    unsafe {
-        env::remove_var("MEPRIS_DEFAULT_PACKAGE_MANAGER");
-    };
 
     assert!(res.is_ok());
     assert!(

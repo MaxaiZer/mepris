@@ -9,6 +9,7 @@ pub mod config;
 pub mod runner;
 pub mod system;
 mod utils;
+pub use utils::test::{run_with_cwd, EnvGuard};
 
 pub fn run(cli: crate::cli::Cli, out: &mut impl Write) -> Result<()> {
     match cli.command {

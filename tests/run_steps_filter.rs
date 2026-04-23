@@ -11,22 +11,20 @@ fn test_run_steps_filter_check_exist() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-  - id: "step2"
-"#,
+        steps:
+          - id: "step1"
+          - id: "step2"
+        "#,
     )
     .expect("Failed to write file.yaml");
 
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
             steps: vec!["step3".to_string()],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
             show_skipped: true,
+            ..Default::default()
         },
         &mut io::sink(),
     );
@@ -43,22 +41,20 @@ fn test_run_steps_filter_preserve_order() {
     fs::write(
         &file_path,
         r#"
-steps:
-  - id: "step1"
-  - id: "step2"
-"#,
+        steps:
+          - id: "step1"
+          - id: "step2"
+        "#,
     )
     .expect("Failed to write file.yaml");
 
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
-            tags_expr: None,
             steps: vec!["step2".to_string(), "step1".to_string()],
-            start_step_id: None,
-            interactive: false,
             dry_run: true,
             show_skipped: true,
+            ..Default::default()
         },
         &mut output,
     );

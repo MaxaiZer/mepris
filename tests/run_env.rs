@@ -122,6 +122,10 @@ fn test_env_from_file_overrides_existing() {
     let env_file_path = dir.path().join(".env");
     let state_file_path = dir.path().join("state.json");
     let mut output = Vec::new();
+    let _guard = EnvGuard::new(
+        "MEPRIS_TEST_SCRIPT_OUTPUT",
+        state_file_path.to_str().unwrap(),
+    );
 
     fs::write(
         &file_path,
@@ -135,8 +139,8 @@ fn test_env_from_file_overrides_existing() {
     )
     .expect("Failed to write file.yaml");
 
-    let _guard = EnvGuard::new("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
-    let _guard2 = EnvGuard::new("PATH4", "old_value");
+    let _guard2 = EnvGuard::new("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
+    let _guard3 = EnvGuard::new("PATH4", "old_value");
     fs::write(&env_file_path, "PATH4=new_value").expect("Failed to write .env");
 
     let res = handle(

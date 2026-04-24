@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::thread;
+use std::{env, thread};
 
 pub struct Script {
     pub shell: Shell,
@@ -59,69 +59,12 @@ pub fn run_script(
 
     let (cmd, args) = get_script_cmd(script);
 
-    let mut child = Command::new(cmd)
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .current_dir(dir)
-        .spawn()
-        .context(format!("failed to run {}", cmd))?;
-
-    let mut stdout = child.stdout.take().unwrap();
-    let mut stderr = child.stderr.take().unwrap();
-
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
-
-    // read by bytes, not lines, because some programs wait for output on the same line ("Enter
-    // password: <input here>") or display progress bars
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match stdout.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let _ = tx.send(buf[..n].to_vec());
-                    }
-                    Err(err) => {
-                        eprintln!("error reading child stdout: {err}");
-                        break;
-                    }
-                }
-            }
-        });
-    }
-
-    {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            loop {
-                match stderr.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let _ = tx.send(buf[..n].to_vec());
-                    }
-                    Err(err) => {
-                        eprintln!("error reading child stderr: {err}");
-                        break;
-                    }
-                }
-            }
-        });
-    }
-
-    drop(tx);
-
-    for chunk in rx {
-        let s = String::from_utf8_lossy(&chunk);
-        write!(out, "{s}")?;
-        out.flush()?;
-    }
-
-    let status = child.wait()?;
+    let status = run_interactive_command(
+        dir,
+        (cmd, args),
+        env::var("MEPRIS_TEST_SCRIPT_OUTPUT").is_ok(),
+        out,
+    )?;
     get_script_result(&status)
 }
 
@@ -168,4 +111,84 @@ fn get_script_result(status: &std::process::ExitStatus) -> anyhow::Result<Script
         }
     }
     Ok(ScriptResult::Success)
+}
+
+fn run_interactive_command(
+    dir: &Path,
+    (cmd, args): (&str, Vec<&str>),
+    testable_output: bool,
+    out: &mut dyn Write,
+) -> anyhow::Result<std::process::ExitStatus> {
+    let mut command = Command::new(cmd);
+    command.args(args);
+    command.stdin(Stdio::inherit());
+
+    if testable_output {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    } else {
+        command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    }
+
+    let mut child = command
+        .current_dir(dir)
+        .spawn()
+        .context(format!("failed to run {}", cmd))?;
+
+    if testable_output {
+        let mut stdout = child.stdout.take().unwrap();
+        let mut stderr = child.stderr.take().unwrap();
+
+        let (tx, rx) = mpsc::channel::<Vec<u8>>();
+
+        // read by bytes, not lines, because some programs wait for output on the same line ("Enter
+        // password: <input here>") or display progress bars
+        {
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match stdout.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let _ = tx.send(buf[..n].to_vec());
+                        }
+                        Err(err) => {
+                            eprintln!("error reading child stdout: {err}");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        {
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                loop {
+                    match stderr.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            let _ = tx.send(buf[..n].to_vec());
+                        }
+                        Err(err) => {
+                            eprintln!("error reading child stderr: {err}");
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        drop(tx);
+
+        for chunk in rx {
+            let s = String::from_utf8_lossy(&chunk);
+            write!(out, "{s}")?;
+            out.flush()?;
+        }
+    }
+
+    let status = child.wait()?;
+    Ok(status)
 }

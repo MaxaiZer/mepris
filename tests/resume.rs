@@ -25,6 +25,7 @@ fn test_resume_uses_absolute_path() {
     .expect("Failed to write file.yaml");
 
     let _guard = EnvGuard::new("MEPRIS_STATE_PATH", state_file_path.to_str().unwrap());
+    let _guard2 = EnvGuard::new("MEPRIS_TEST_SCRIPT_OUTPUT", "1");
     run_with_cwd(dir.path(), || {
         let res = handle(
             RunArgs {

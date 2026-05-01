@@ -9,7 +9,11 @@ pub mod config;
 pub mod runner;
 pub mod system;
 mod utils;
-pub use utils::test::{run_with_cwd, EnvGuard};
+pub use utils::test::{EnvGuard, run_with_cwd};
+
+mod logging;
+pub use logging::setup_tracing;
+pub use logging::test::run_with_tracing;
 
 pub fn run(cli: crate::cli::Cli, out: &mut impl Write) -> Result<()> {
     match cli.command {

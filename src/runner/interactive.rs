@@ -1,10 +1,10 @@
-use std::collections::HashSet;
-use std::io::{BufRead, Write};
-
-use super::logger::Logger;
+use crate::logging::EventType;
 use crate::runner::{Step, StepCompletedResult};
 use anyhow::Result;
 use colored::Colorize;
+use std::collections::HashSet;
+use std::io::{BufRead, Write};
+use tracing::info;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Decision {
@@ -20,7 +20,7 @@ pub trait Interactor {
         step: &Step,
         has_broken_deps: bool,
         completion: &StepCompletedResult,
-        logger: &mut Logger,
+        out: &mut dyn Write,
     ) -> Result<Decision>;
 }
 
@@ -40,9 +40,9 @@ impl<R: BufRead> Interactor for CliInteractor<R> {
         step: &Step,
         has_broken_deps: bool,
         completion: &StepCompletedResult,
-        logger: &mut Logger,
+        out: &mut dyn Write,
     ) -> Result<Decision> {
-        ask_confirmation(step, has_broken_deps, completion, &mut self.input, logger)
+        ask_confirmation(step, has_broken_deps, completion, &mut self.input, out)
     }
 }
 
@@ -53,7 +53,7 @@ pub fn ask_confirmation(
     has_broken_deps: bool,
     completion: &StepCompletedResult,
     read: &mut impl BufRead,
-    logger: &mut Logger,
+    out: &mut dyn Write,
 ) -> Result<Decision> {
     let mut cmds = vec![
         "r=Run",
@@ -73,19 +73,17 @@ pub fn ask_confirmation(
         .map(|s| s.split('=').next().unwrap().to_string())
         .collect();
 
-    print_step(step, has_broken_deps, completion, &mut logger.out, false)?;
-    logger
-        .log_with_progress(|p| format!("\n{p} What do you want to do? ({}): ", cmds.join(", ")))?;
+    print_step(step, has_broken_deps, completion, out, false)?;
+    info!(event_type = %EventType::UserDecision.as_str(), options = %cmds.join(", "));
 
     loop {
-        logger.out.flush()?;
-
+        out.flush()?;
         let mut input = String::new();
-        read.read_line(&mut input).unwrap();
+        read.read_line(&mut input)?;
 
         input = input.trim().to_lowercase();
         if !letters.contains(&input) {
-            logger.log("Invalid input, please try again.")?;
+            writeln!(out, "Invalid input, please try again.")?;
             continue;
         }
 
@@ -95,12 +93,10 @@ pub fn ask_confirmation(
             "a" => return Ok(Decision::Abort),
             "l" => return Ok(Decision::LeaveInteractiveMode),
             "v" => {
-                print_step(step, has_broken_deps, completion, &mut logger.out, true)?;
-                logger.log_with_progress(|p| {
-                    format!("\n{p} What do you want to do? ({}): ", cmds.join(", "))
-                })?;
+                print_step(step, has_broken_deps, completion, out, true)?;
+                info!(event_type = %EventType::UserDecision.as_str(), options = %cmds.join(", "));
             }
-            _ => logger.log("Invalid input, please try again.")?,
+            _ => writeln!(out, "Invalid input, please try again.")?,
         }
     }
 }
@@ -230,11 +226,13 @@ fn output_script(script: &str, max_lines: usize, out: &mut dyn Write) -> Result<
 mod tests {
     use super::*;
     use crate::config::{self, StepSelectionReason::MatchedFilter};
+    use crate::logging::test::run_with_tracing;
+    use crate::runner::dry::RunPlan;
     use crate::runner::script::Script;
     use crate::runner::{Package, Step};
     use crate::system::pkg::PackageManager;
     use crate::system::shell::Shell;
-    use std::io::Cursor;
+    use std::io::{Cursor, sink};
 
     struct MockInteractor {
         decisions: Vec<Decision>,
@@ -246,7 +244,7 @@ mod tests {
             _: &Step,
             _: bool,
             _: &StepCompletedResult,
-            _: &mut Logger,
+            _: &mut dyn Write,
         ) -> Result<Decision> {
             if self.decisions.is_empty() {
                 panic!("not enough decisions");
@@ -304,31 +302,37 @@ mod tests {
         let mut interactor = MockInteractor {
             decisions: vec![Decision::Skip, Decision::Run],
         };
-        let mut output = Vec::new();
 
-        let result = crate::runner::run(
-            &steps,
-            &crate::runner::RunParameters {
-                dry_run: false,
-                source_file_path: std::path::PathBuf::from("/test.yaml"),
-            },
-            &FakeStateSaver,
-            &mut MockScriptChecker,
-            Some(&mut interactor),
-            &mut output,
-        )?;
+        let mut result: Option<RunPlan> = None;
+        let trace_output = run_with_tracing(false, || {
+            result = crate::runner::run(
+                &steps,
+                &crate::runner::RunParameters {
+                    dry_run: false,
+                    source_file_path: std::path::PathBuf::from("/test.yaml"),
+                },
+                &FakeStateSaver,
+                &mut MockScriptChecker,
+                Some(&mut interactor),
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
         assert!(result.is_none());
-        let output_str = String::from_utf8(output).unwrap();
         assert!(
-            !output_str.contains("Running step 'test-step'"),
+            !trace_output
+                .as_string()
+                .contains("Running step 'test-step'"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         assert!(
-            output_str.contains("Running step 'test-step-2'"),
+            trace_output
+                .as_string()
+                .contains("Running step 'test-step-2'"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         Ok(())
     }
@@ -342,7 +346,7 @@ mod tests {
         };
         let mut output = Vec::new();
 
-        let result = crate::runner::run(
+        let _ = crate::runner::run(
             &steps,
             &crate::runner::RunParameters {
                 dry_run: false,
@@ -396,23 +400,29 @@ mod tests {
         let mut interactor = MockInteractor {
             decisions: vec![Decision::Run],
         };
-        let mut output = Vec::new();
 
-        let result = crate::runner::run(
-            &steps,
-            &crate::runner::RunParameters {
-                dry_run: false,
-                source_file_path: std::path::PathBuf::from("/test.yaml"),
-            },
-            &FakeStateSaver,
-            &mut MockScriptChecker,
-            Some(&mut interactor),
-            &mut output,
-        )?;
+        let mut result: Option<RunPlan> = None;
+        let trace_output = run_with_tracing(false, || {
+            result = crate::runner::run(
+                &steps,
+                &crate::runner::RunParameters {
+                    dry_run: false,
+                    source_file_path: std::path::PathBuf::from("/test.yaml"),
+                },
+                &FakeStateSaver,
+                &mut MockScriptChecker,
+                Some(&mut interactor),
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
         assert!(result.is_none());
-        let output_str = String::from_utf8(output).unwrap();
-        assert!(output_str.contains("Running step"));
+        assert!(
+            trace_output.as_string().contains("Running step"),
+            "unexpected output: {}",
+            trace_output.as_string()
+        );
         Ok(())
     }
 
@@ -456,25 +466,28 @@ mod tests {
         let mut interactor = MockInteractor {
             decisions: vec![Decision::Skip, Decision::LeaveInteractiveMode],
         };
-        let mut output = Vec::new();
 
-        let result = crate::runner::run(
-            &steps,
-            &crate::runner::RunParameters {
-                dry_run: false,
-                source_file_path: std::path::PathBuf::from("/test.yaml"),
-            },
-            &FakeStateSaver,
-            &mut MockScriptChecker,
-            Some(&mut interactor),
-            &mut output,
-        );
+        let mut result: Result<Option<RunPlan>> = Ok(None);
+        let trace_output = run_with_tracing(false, || {
+            result = crate::runner::run(
+                &steps,
+                &crate::runner::RunParameters {
+                    dry_run: false,
+                    source_file_path: std::path::PathBuf::from("/test.yaml"),
+                },
+                &FakeStateSaver,
+                &mut MockScriptChecker,
+                Some(&mut interactor),
+                &mut sink(),
+            );
+        });
 
-        let output_str = String::from_utf8(output).unwrap();
         assert!(
-            output_str.contains("Step 'test-step-2' completed"),
+            trace_output
+                .as_string()
+                .contains("Step 'test-step-2' completed"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         assert!(result.is_err());
         assert!(
@@ -521,25 +534,27 @@ mod tests {
         let mut interactor = MockInteractor {
             decisions: vec![Decision::Skip, Decision::LeaveInteractiveMode],
         };
-        let mut output = Vec::new();
 
-        let result = crate::runner::run(
-            &steps,
-            &crate::runner::RunParameters {
-                dry_run: false,
-                source_file_path: std::path::PathBuf::from("/test.yaml"),
-            },
-            &FakeStateSaver,
-            &mut MockScriptChecker,
-            Some(&mut interactor),
-            &mut output,
-        )?;
+        let mut result: Option<RunPlan> = None;
+        let trace_output = run_with_tracing(false, || {
+            result = crate::runner::run(
+                &steps,
+                &crate::runner::RunParameters {
+                    dry_run: false,
+                    source_file_path: std::path::PathBuf::from("/test.yaml"),
+                },
+                &FakeStateSaver,
+                &mut MockScriptChecker,
+                Some(&mut interactor),
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
-        let output_str = String::from_utf8(output).unwrap();
         assert!(
-            output_str.contains("Run completed"),
+            trace_output.as_string().contains("Run completed"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         Ok(())
     }
@@ -557,26 +572,30 @@ mod tests {
             ..Default::default()
         };
 
-        let mut output = Vec::new();
-
-        let result = crate::runner::run(
-            &[step],
-            &crate::runner::RunParameters {
-                dry_run: false,
-                source_file_path: std::path::PathBuf::from("/test.yaml"),
-            },
-            &FakeStateSaver,
-            &mut MockScriptChecker,
-            None,
-            &mut output,
-        )?;
+        let mut result: Option<RunPlan> = None;
+        let trace_output = run_with_tracing(false, || {
+            result = crate::runner::run(
+                &[step],
+                &crate::runner::RunParameters {
+                    dry_run: false,
+                    source_file_path: std::path::PathBuf::from("/test.yaml"),
+                },
+                &FakeStateSaver,
+                &mut MockScriptChecker,
+                None,
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
         assert!(result.is_none());
-        let output_str = String::from_utf8(output).unwrap();
         assert!(
-            output_str.contains("Running step 'test-step'") && output_str.contains("Run completed"),
+            trace_output
+                .as_string()
+                .contains("Running step 'test-step'")
+                && trace_output.as_string().contains("Run completed"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         Ok(())
     }
@@ -609,27 +628,30 @@ mod tests {
             decisions: vec![Decision::Skip, Decision::Run],
         };
 
-        let mut output = Vec::new();
-
-        let result = crate::runner::run(
-            &[step1, step2],
-            &crate::runner::RunParameters {
-                dry_run: false,
-                source_file_path: std::path::PathBuf::from("/test.yaml"),
-            },
-            &FakeStateSaver,
-            &mut MockScriptChecker,
-            Some(&mut interactor),
-            &mut output,
-        )?;
+        let mut result: Option<RunPlan> = None;
+        let trace_output = run_with_tracing(false, || {
+            result = crate::runner::run(
+                &[step1, step2],
+                &crate::runner::RunParameters {
+                    dry_run: false,
+                    source_file_path: std::path::PathBuf::from("/test.yaml"),
+                },
+                &FakeStateSaver,
+                &mut MockScriptChecker,
+                Some(&mut interactor),
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
         assert!(result.is_none());
-        let output_str = String::from_utf8(output).unwrap();
         assert!(
-            output_str.contains("Running step 'test-step2'")
-                && output_str.contains("Run completed"),
+            trace_output
+                .as_string()
+                .contains("Running step 'test-step2'")
+                && trace_output.as_string().contains("Run completed"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         Ok(())
     }
@@ -872,20 +894,25 @@ mod tests {
         };
 
         let mut input = Cursor::new("r\n");
-        let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
-        let decision = ask_confirmation(
-            &step,
-            false,
-            &StepCompletedResult::Completed,
-            &mut input,
-            &mut logger,
-        )?;
+        let mut decision: Decision = Decision::Run;
+        let trace_output = run_with_tracing(false, || {
+            decision = ask_confirmation(
+                &step,
+                false,
+                &StepCompletedResult::Completed,
+                &mut input,
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
         assert_eq!(decision, Decision::Run);
-        let output_str = String::from_utf8(output).unwrap();
-        assert!(output_str.contains("What do you want to do?"));
+        assert!(
+            trace_output.as_string().contains("What do you want to do?"),
+            "unexpected output: {}",
+            trace_output.as_string()
+        );
         Ok(())
     }
 
@@ -901,14 +928,13 @@ mod tests {
 
         let mut input = Cursor::new("s\n");
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
         let decision = ask_confirmation(
             &step,
             false,
             &StepCompletedResult::Completed,
             &mut input,
-            &mut logger,
+            &mut output,
         )?;
 
         assert_eq!(decision, Decision::Skip);
@@ -927,14 +953,13 @@ mod tests {
 
         let mut input = Cursor::new("a\n");
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
         let decision = ask_confirmation(
             &step,
             false,
             &StepCompletedResult::Completed,
             &mut input,
-            &mut logger,
+            &mut output,
         )?;
 
         assert_eq!(decision, Decision::Abort);
@@ -953,14 +978,13 @@ mod tests {
 
         let mut input = Cursor::new("l\n");
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
         let decision = ask_confirmation(
             &step,
             false,
             &StepCompletedResult::Completed,
             &mut input,
-            &mut logger,
+            &mut output,
         )?;
 
         assert_eq!(decision, Decision::LeaveInteractiveMode);
@@ -979,14 +1003,13 @@ mod tests {
 
         let mut input = Cursor::new("invalid\nr\n");
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
         let decision = ask_confirmation(
             &step,
             false,
             &StepCompletedResult::Completed,
             &mut input,
-            &mut logger,
+            &mut output,
         )?;
 
         assert_eq!(decision, Decision::Run);
@@ -1015,19 +1038,22 @@ mod tests {
 
         let mut input = Cursor::new("v\nr\n");
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
-        let decision = ask_confirmation(
-            &step,
-            false,
-            &StepCompletedResult::Completed,
-            &mut input,
-            &mut logger,
-        )?;
+        let mut decision: Decision = Decision::Run;
+        let trace_output = run_with_tracing(false, || {
+            decision = ask_confirmation(
+                &step,
+                false,
+                &StepCompletedResult::Completed,
+                &mut input,
+                &mut output,
+            )
+            .unwrap();
+        });
 
         assert_eq!(decision, Decision::Run);
         let output_str = String::from_utf8(output).unwrap();
-        assert!(output_str.contains("What do you want to do?"));
+        assert!(trace_output.as_string().contains("What do you want to do?"));
         assert!(output_str.contains("line 14"));
         Ok(())
     }
@@ -1052,14 +1078,13 @@ mod tests {
 
         let mut input = Cursor::new("r\n");
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
         ask_confirmation(
             &step,
             false,
             &StepCompletedResult::Completed,
             &mut input,
-            &mut logger,
+            &mut output,
         )?;
 
         let clean = strip_ansi_escapes::strip(output);
@@ -1087,23 +1112,28 @@ mod tests {
         };
 
         let mut input = Cursor::new("r\n");
+        let mut decision: Decision = Decision::Abort;
         let mut output = Vec::new();
-        let mut logger = Logger::new(1, &mut output);
 
-        ask_confirmation(
-            &step,
-            true,
-            &StepCompletedResult::Completed,
-            &mut input,
-            &mut logger,
-        )?;
+        let trace_output = run_with_tracing(false, || {
+            decision = ask_confirmation(
+                &step,
+                true,
+                &StepCompletedResult::Completed,
+                &mut input,
+                &mut output,
+            )
+            .unwrap();
+        });
 
         let clean = strip_ansi_escapes::strip(output);
         let output_str = String::from_utf8(clean)?;
+
+        assert_eq!(decision, Decision::Run);
         assert!(
-            output_str.contains("Run anyway"),
+            trace_output.as_string().contains("Run anyway"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         assert!(
             output_str.contains("has broken dependencies"),

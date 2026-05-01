@@ -9,6 +9,7 @@ use std::fs;
 use std::process::{Command, Output, Stdio};
 use strum_macros::{Display, EnumIter, EnumString};
 use tempfile::NamedTempFile;
+use tracing::debug;
 use which::which;
 
 mod parsers;
@@ -335,6 +336,11 @@ fn run_cacheable_is_installed(
         let cache_id = manager.to_string();
 
         let packages = cache.entry(cache_id).or_insert_with(|| {
+            debug!(
+                "[DEBUG] package cache is empty for {}, populating...",
+                manager
+            );
+
             let output = if manager == &PackageManager::Winget {
                 run_win_command_with_file_output(cmd).unwrap()
             } else {

@@ -2,12 +2,14 @@ use crate::commands::utils::check_tags_exist;
 use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByTags};
 use crate::config::Step;
 use crate::config::expr::{eval_os_expr, eval_tags_expr, parse};
+use crate::logging::{EventType, SpanType};
 use crate::runner;
-use crate::runner::script::{ScriptResult, run_noninteractive_script};
+use crate::runner::script::{ScriptStatus, run_noninteractive_script};
 use crate::system::os_info::OsInfo;
 use anyhow::{Context, bail};
 use std::collections::HashMap;
 use std::path::Path;
+use tracing::{debug, debug_span};
 
 pub struct AllFiltersResult<'a> {
     pub filtered_steps: Vec<&'a Step>,
@@ -175,14 +177,22 @@ pub fn filter_by_when_script<'a>(steps: &[&'a Step]) -> anyhow::Result<FilterRes
             continue;
         }
 
+        let _span = debug_span!("when-script check", step_id = s.id).entered();
+
         let script = runner::Script::from(s.when_script.as_ref().unwrap(), &s.defaults);
         let run =
             run_noninteractive_script(&script, Path::new(&s.source_file).parent().unwrap(), None)
                 .context(format!("failed to run when-script for step '{}'", s.id))?;
 
-        match run {
-            ScriptResult::Success => matching.push(*s),
-            ScriptResult::NotZeroExitStatus(_) => not_matching.push(*s),
+        debug!(
+            event_type = %EventType::ScriptCompleted.as_str(),
+            code = run.status.code(),
+            elapsed_secs = run.time.as_secs_f64(),
+            kind = "when-script",
+        );
+        match run.status {
+            ScriptStatus::Success => matching.push(*s),
+            ScriptStatus::Failed(_) => not_matching.push(*s),
         }
     }
 
@@ -200,6 +210,9 @@ pub fn filter_steps<'a>(
     tags_expr: &Option<String>,
     start_step_id: &Option<String>,
 ) -> anyhow::Result<AllFiltersResult<'a>> {
+    let _span = debug_span!(SpanType::Filter.as_str()).entered();
+    debug!(event_type=%EventType::FilterStarted);
+
     let mut res = AllFiltersResult::new();
 
     let all_steps = steps.iter().collect::<Vec<&Step>>();
@@ -286,6 +299,8 @@ pub fn filter_steps<'a>(
         .filter(|s| !res.excluded_steps.contains_key(&s.id))
         .cloned()
         .collect();
+
+    debug!(event_type=%EventType::FilterCompleted);
     Ok(res)
 }
 
@@ -293,10 +308,8 @@ pub fn filter_steps<'a>(
 mod tests {
     use super::*;
     use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByStartId, ByTags};
-    use crate::config::Script;
     use crate::config::expr::Expr;
     use crate::system::os_info::Platform;
-    use tempfile::tempdir;
 
     fn create_step(id: &str, tags: Vec<&str>, os: Option<Expr>) -> Step {
         Step {

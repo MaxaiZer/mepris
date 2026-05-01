@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 use std::{env, thread};
 
 pub struct Script {
@@ -40,9 +41,23 @@ impl Script {
     }
 }
 
-pub enum ScriptResult {
+pub enum ScriptStatus {
     Success,
-    NotZeroExitStatus(i32),
+    Failed(i32),
+}
+
+impl ScriptStatus {
+    pub fn code(&self) -> i32 {
+        match self {
+            ScriptStatus::Success => 0,
+            ScriptStatus::Failed(code) => *code,
+        }
+    }
+}
+
+pub struct ScriptResult {
+    pub status: ScriptStatus,
+    pub time: Duration,
 }
 
 pub fn run_script(
@@ -58,14 +73,14 @@ pub fn run_script(
     }
 
     let (cmd, args) = get_script_cmd(script);
-
+    let time = Instant::now();
     let status = run_interactive_command(
         dir,
         (cmd, args),
         env::var("MEPRIS_TEST_SCRIPT_OUTPUT").is_ok(),
         out,
     )?;
-    get_script_result(&status)
+    get_script_result(&status, &time)
 }
 
 pub fn run_noninteractive_script(
@@ -89,8 +104,9 @@ pub fn run_noninteractive_script(
         .spawn()
         .context(format!("failed to run {}", cmd))?;
 
+    let time = Instant::now();
     let status = child.wait()?;
-    get_script_result(&status)
+    get_script_result(&status, &time)
 }
 
 fn get_script_cmd(script: &Script) -> (&str, Vec<&str>) {
@@ -103,14 +119,25 @@ fn get_script_cmd(script: &Script) -> (&str, Vec<&str>) {
     }
 }
 
-fn get_script_result(status: &std::process::ExitStatus) -> anyhow::Result<ScriptResult> {
+fn get_script_result(
+    status: &std::process::ExitStatus,
+    time: &Instant,
+) -> anyhow::Result<ScriptResult> {
     if !status.success() {
         match status.code() {
-            Some(code) => return Ok(ScriptResult::NotZeroExitStatus(code)),
+            Some(code) => {
+                return Ok(ScriptResult {
+                    status: ScriptStatus::Failed(code),
+                    time: time.elapsed(),
+                });
+            }
             None => bail!("script terminated by signal"),
         }
     }
-    Ok(ScriptResult::Success)
+    Ok(ScriptResult {
+        status: ScriptStatus::Success,
+        time: time.elapsed(),
+    })
 }
 
 fn run_interactive_command(

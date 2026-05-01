@@ -30,6 +30,7 @@ pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
             interactive,
             dry_run: args.dry_run,
             show_skipped: args.show_skipped,
+            debug: args.debug,
         },
         out,
     )

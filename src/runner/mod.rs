@@ -7,7 +7,6 @@ use std::{
 
 pub mod dry;
 pub mod interactive;
-pub mod logger;
 mod pkg;
 pub mod script;
 pub mod script_checker;
@@ -19,16 +18,18 @@ use crate::{config, config::aliases::load_aliases};
 
 use crate::config::StepSelectionReason;
 use crate::config::aliases::PackageAliases;
+use crate::logging::{EventType, SpanType};
 use crate::runner::pkg::{install_packages, resolve_step_package_manager};
+use crate::runner::script::ScriptStatus;
+use crate::runner::script::ScriptStatus::Failed;
 pub(crate) use crate::runner::script::{
     Script, ScriptResult, run_noninteractive_script, run_script,
 };
 use crate::system::pkg::PackageManager;
 use crate::system::shell::Shell;
 use anyhow::{Context, Result, bail};
-use colored::Colorize;
-use logger::Logger;
 use script_checker::ScriptChecker;
+use tracing::{debug, debug_span, info, info_span, warn};
 
 pub struct RunParameters {
     pub source_file_path: PathBuf,
@@ -140,20 +141,43 @@ impl Step {
         &self,
         script_checker: Option<&mut dyn ScriptChecker>,
     ) -> Result<StepCompletedResult> {
+        if self.packages.is_empty() && self.check_script.is_none() {
+            return match self.script {
+                Some(_) => Ok(StepCompletedResult::HasScriptWithoutCheck),
+                None => Ok(StepCompletedResult::Completed),
+            };
+        }
+
+        let _check_span = debug_span!(SpanType::StepCheck.as_str(), step_id = self.id).entered();
+        debug!(event_type = %EventType::StepCheckStarted.as_str());
+
+        let exit = |res: StepCompletedResult| {
+            // "finished" event instead of span's on_close() to avoid logging on errors (`?`)
+            debug!(event_type = %EventType::StepCheckFinished.as_str());
+            Ok(res)
+        };
+
         if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && !self.package_manager.is_available()
         {
-            return Ok(StepCompletedResult::NotInstalledPackageManager);
+            return exit(StepCompletedResult::NotInstalledPackageManager);
         }
 
         let mut not_installed_pkgs = Vec::new();
-        for pkg in self.packages.iter() {
-            if !self.package_manager.is_installed(&pkg.name)? {
-                not_installed_pkgs.push(pkg.name.clone());
+
+        if !self.packages.is_empty() {
+            let _packages_span = debug_span!("check_packages").entered();
+
+            for pkg in self.packages.iter() {
+                if !self.package_manager.is_installed(&pkg.name)? {
+                    not_installed_pkgs.push(pkg.name.clone());
+                }
             }
+
+            debug!(event_type = %EventType::PackagesCheckCompleted.as_str());
         }
 
         if !not_installed_pkgs.is_empty() {
-            return Ok(StepCompletedResult::NotInstalledPackages(
+            return exit(StepCompletedResult::NotInstalledPackages(
                 not_installed_pkgs,
             ));
         }
@@ -161,17 +185,25 @@ impl Step {
         if let Some(check_script) = self.check_script.as_ref() {
             let res = run_noninteractive_script(check_script, self.directory(), script_checker)
                 .context(format!("failed to run check-script for step '{}'", self.id))?;
-            match res {
-                ScriptResult::NotZeroExitStatus(_) => {
-                    return Ok(StepCompletedResult::FailedCheckScript);
+
+            debug!(
+                event_type = %EventType::ScriptCompleted.as_str(),
+                code = res.status.code(),
+                elapsed_secs = res.time.as_secs_f64(),
+                kind = "check-script",
+            );
+
+            match res.status {
+                Failed(_) => {
+                    return exit(StepCompletedResult::FailedCheckScript);
                 }
-                ScriptResult::Success => {}
+                ScriptStatus::Success => {}
             }
         } else if self.script.is_some() {
-            return Ok(StepCompletedResult::HasScriptWithoutCheck);
+            return exit(StepCompletedResult::HasScriptWithoutCheck);
         }
 
-        Ok(StepCompletedResult::Completed)
+        exit(StepCompletedResult::Completed)
     }
 }
 
@@ -191,13 +223,19 @@ pub fn run(
         return dry::run(&steps).map(Some);
     }
 
-    let mut logger = Logger::new(steps.len(), out);
     let mut interactive = interactor.is_some();
     let mut execution_results: HashMap<String, ExecutionResult> = HashMap::new();
+    let total_steps = steps.len();
+    let _span = info_span!("run").entered();
 
     for (i, step) in steps.iter_mut().enumerate() {
-        logger.current_step = i + 1;
-
+        let _span = info_span!(
+            "step",
+            step_id = step.id,
+            number = i + 1,
+            total = total_steps
+        )
+        .entered();
         let has_broken_deps = step.dependencies.iter().any(|dep| {
             execution_results
                 .get(dep)
@@ -211,12 +249,12 @@ pub fn run(
             })
             .is_err()
         {
-            logger.log(&format!("{} Failed to save run state", "Warning:".yellow()))?;
+            warn!("failed to save run state");
         }
 
         let completion = step.is_completed(Some(script_checker))?;
         if interactive && let Some(interactor) = interactor.as_mut() {
-            match interactor.ask_confirmation(step, has_broken_deps, &completion, &mut logger)? {
+            match interactor.ask_confirmation(step, has_broken_deps, &completion, out)? {
                 Decision::Run => {}
                 Decision::Skip => {
                     if completion == StepCompletedResult::Completed {
@@ -230,9 +268,7 @@ pub fn run(
                 Decision::LeaveInteractiveMode => interactive = false,
             }
         } else if completion == StepCompletedResult::Completed {
-            logger.log_with_progress(|p| {
-                format!("✅ {p} Step '{}' already completed, skipping", step.id)
-            })?;
+            info!(event_type = %EventType::CompletedStepSkipped.as_str());
             continue;
         }
 
@@ -240,9 +276,7 @@ pub fn run(
             bail!("cannot run step with broken dependencies without interactive mode")
         }
 
-        logger.log_with_progress(|p| format!("🚀 {p} Running step '{}'...", step.id))?;
-        run_step(step, script_checker, &mut logger)?;
-        logger.log_with_progress(|p| format!("✅ {p} Step '{}' completed", step.id))?;
+        run_step(step, script_checker, out)?;
 
         if has_broken_deps {
             execution_results.insert(step.id.clone(), ExecutionResult::CompletedWithMissingDeps);
@@ -258,21 +292,23 @@ pub fn run(
         })
         .is_err()
     {
-        logger.log(&format!("{} Failed to save run state", "Warning:".yellow()))?;
+        warn!("failed to save run state");
     }
 
-    logger.log("✅ Run completed")?;
-
+    info!(event_type = %EventType::RunCompleted.as_str(), interactive = interactive);
     Ok(None)
 }
 
 fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptChecker) -> Result<()> {
+    let _span = debug_span!("check_scripts_before_run").entered();
+
     let skip_if_shell_unavailable = true;
+    let mut checked_count = 0;
     let check_step_script = |step: &Step,
                              script_name: &str,
                              script: &Option<Script>,
                              script_checker: &mut dyn ScriptChecker|
-     -> Result<()> {
+     -> Result<usize> {
         if let Some(script) = script {
             script_checker
                 .check_script(script, skip_if_shell_unavailable)
@@ -280,32 +316,58 @@ fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptCheck
                     "Failed to check {script_name} in {}, step '{}'",
                     step.source_file, step.id
                 ))?;
+            return Ok(1);
         }
-        Ok(())
+        Ok(0)
     };
 
     for step in steps.iter() {
-        check_step_script(step, "pre-script", &step.pre_script, script_checker)?;
-        check_step_script(step, "script", &step.script, script_checker)?;
-        check_step_script(step, "check-script", &step.check_script, script_checker)?;
+        checked_count += check_step_script(step, "pre-script", &step.pre_script, script_checker)?;
+        checked_count += check_step_script(step, "script", &step.script, script_checker)?;
+        checked_count +=
+            check_step_script(step, "check-script", &step.check_script, script_checker)?;
     }
+
+    if checked_count > 0 {
+        debug!(event_type = %EventType::ScriptsCheckCompleted.as_str(), count=checked_count);
+    }
+
     Ok(())
 }
 
 fn run_step(
     step: &Step,
     script_checker: &mut dyn ScriptChecker,
-    logger: &mut Logger,
+    out: &mut impl Write,
 ) -> Result<()> {
+    let _span = info_span!("step_run").entered();
+    info!(event_type = %EventType::StepRunStarted.as_str());
+
     let step_dir = step.directory();
 
     let mut run_step_script =
-        |name: &str, script: &Option<Script>, logger: &mut Logger| -> Result<()> {
+        |name: &str, script: &Option<Script>, out: &mut dyn Write| -> Result<()> {
             if let Some(script) = script {
-                logger.log_with_progress(|p| format!("⚙️ {p} Running {name}..."))?;
-                match run_script(script, step_dir, Some(script_checker), logger.out) {
-                    Ok(ScriptResult::Success) => return Ok(()),
-                    Ok(ScriptResult::NotZeroExitStatus(code)) => {
+                info!(event_type = %EventType::ScriptStarted.as_str(), kind=name);
+                let result = run_script(script, step_dir, Some(script_checker), out);
+                if let Ok(res) = result.as_ref() {
+                    debug!(
+                        event_type = %EventType::ScriptCompleted.as_str(),
+                        code = res.status.code(),
+                        elapsed_secs = res.time.as_secs_f64(),
+                        kind = name,
+                    );
+                }
+
+                match result {
+                    Ok(ScriptResult {
+                        status: ScriptStatus::Success,
+                        ..
+                    }) => return Ok(()),
+                    Ok(ScriptResult {
+                        status: Failed(code),
+                        ..
+                    }) => {
                         bail!("failed to run {name}: status code {code}")
                     }
                     Err(e) => bail!("failed to run {name}: {e}"),
@@ -314,7 +376,7 @@ fn run_step(
             Ok(())
         };
 
-    run_step_script("pre-script", &step.pre_script, logger)?;
+    run_step_script("pre-script", &step.pre_script, out)?;
 
     if !step.packages.is_empty() {
         install_packages(
@@ -324,12 +386,13 @@ fn run_step(
                 .map(|p| p.name.clone())
                 .collect::<Vec<String>>(),
             &step.package_manager,
-            logger,
         )?;
     }
 
-    run_step_script("script", &step.script, logger)?;
-    run_step_script("check-script", &step.check_script, logger)?;
+    run_step_script("script", &step.script, out)?;
+    run_step_script("check-script", &step.check_script, out)?;
+
+    info!(event_type = %EventType::StepRunFinished.as_str());
     Ok(())
 }
 
@@ -340,11 +403,14 @@ mod tests {
     use super::*;
     use crate::EnvGuard;
     use crate::config::StepSelectionReason::MatchedFilter;
+    use crate::logging::test::run_with_tracing;
+    use crate::runner::dry::RunPlan;
     use crate::runner::script_checker::DefaultScriptChecker;
     use crate::system::pkg::PackageSource;
     use rstest::rstest;
     use serial_test::serial;
-    use std::{collections::HashSet, env, fs, io};
+    use std::io::sink;
+    use std::{collections::HashSet, fs, io};
     use tempfile::tempdir;
 
     struct FakeStateSaver;
@@ -538,8 +604,6 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn test_run_already_completed_dependencies() -> Result<()> {
-        let mut output = Vec::new();
-
         let steps = vec![
             config::Step {
                 id: "step".to_string(),
@@ -569,28 +633,33 @@ mod tests {
             },
         ];
 
-        let res = run(
-            &steps,
-            &RunParameters {
-                dry_run: false,
-                source_file_path: Path::new("/file.yaml").to_path_buf(),
-            },
-            &FakeStateSaver,
-            &mut DefaultScriptChecker::new(),
-            None,
-            &mut output,
-        )?;
+        let mut res: Option<RunPlan> = None;
+        let trace_output = run_with_tracing(false, || {
+            res = run(
+                &steps,
+                &RunParameters {
+                    dry_run: false,
+                    source_file_path: Path::new("/file.yaml").to_path_buf(),
+                },
+                &FakeStateSaver,
+                &mut DefaultScriptChecker::new(),
+                None,
+                &mut sink(),
+            )
+            .unwrap();
+        });
 
-        let output_str = String::from_utf8(output).unwrap();
         assert!(
-            output_str.contains("Step 'step' already completed"),
+            trace_output
+                .as_string()
+                .contains("Step 'step' already completed"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
         assert!(
-            output_str.contains("Step 'step2' completed"),
+            trace_output.as_string().contains("Step 'step2' completed"),
             "unexpected output: {}",
-            output_str
+            trace_output.as_string()
         );
 
         Ok(())

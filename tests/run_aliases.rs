@@ -1,7 +1,7 @@
-use std::fs;
-
-use mepris::{EnvGuard, cli::RunArgs, commands::run::handle};
+use mepris::{EnvGuard, cli::RunArgs, commands::run::handle, run_with_tracing};
 use serial_test::serial;
+use std::fs;
+use std::io::sink;
 use tempfile::tempdir;
 
 #[test]
@@ -56,7 +56,6 @@ fn test_run_local_aliases() {
     let dir = tempdir().expect("Failed to create temp dir");
     let file_path = dir.path().join("file.yaml");
     let aliases_path = dir.path().join("pkg_aliases.yaml");
-    let mut output = Vec::new();
     let _guard = EnvGuard::new("MEPRIS_DEFAULT_PACKAGE_MANAGER", "apt");
     let _guard2 = EnvGuard::new("MEPRIS_INSTALL_COMMAND", "echo installing");
     let _guard3 = EnvGuard::new("MEPRIS_IS_INSTALLED_RESULT", "1");
@@ -80,19 +79,24 @@ fn test_run_local_aliases() {
     )
     .expect("Failed to write pkg_aliases.yaml");
 
-    let res = handle(
-        RunArgs {
-            file: file_path.to_str().unwrap().to_string(),
-            ..Default::default()
-        },
-        &mut output,
-    );
-    let output = String::from_utf8_lossy(&output);
+    let mut res: anyhow::Result<()> = Ok(());
+    let trace_output = run_with_tracing(false, || {
+        res = handle(
+            RunArgs {
+                file: file_path.to_str().unwrap().to_string(),
+                ..Default::default()
+            },
+            &mut sink(),
+        );
+    });
 
     assert!(res.is_ok(), "error: {}", res.unwrap_err().to_string());
     assert!(
-        output.contains("Installing packages: git-local"),
-        "output doesn't contain 'Installing packages: git-local': {output}"
+        trace_output
+            .as_string()
+            .contains("Installing packages: git-local"),
+        "output doesn't contain 'Installing packages: git-local': {}",
+        trace_output.as_string()
     );
 }
 

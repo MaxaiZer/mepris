@@ -55,6 +55,7 @@ fn test_resume_uses_absolute_path() {
             interactive: false,
             dry_run: false,
             show_skipped: false,
+            debug: false,
         },
         &mut output,
     );

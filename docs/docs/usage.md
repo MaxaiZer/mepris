@@ -28,8 +28,9 @@ mepris run -f config.yaml --dry-run --show-skipped
 * `-t, --tag` — filter steps using a tag expression
 * `-s, --step` — run only specific steps by ID
 * `-i, --interactive` — confirm each step before execution
-* `--dry-run` — show execution plan without running anything
+* `-d, --dry-run` — show execution plan without running anything
 * `--show-skipped` — show steps that would be skipped (requires `--dry-run`)
+* `--debug` — enable debug output (shows script execution time, exit codes, etc.)
 
 Dry-run output example:
 ```
@@ -57,8 +58,9 @@ mepris resume --dry-run --show-skipped
 ```
 
 * `-i` — resume in interactive mode (for example, to skip failed step)
-* `--dry-run` — show execution plan without running anything
+* `-d, --dry-run` — show execution plan without running anything
 * `--show-skipped` — show steps that would be skipped (requires `--dry-run`)
+* `--debug` — enable debug output (shows script execution time, exit codes, etc.)
 
 ---
 

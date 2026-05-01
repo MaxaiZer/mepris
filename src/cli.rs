@@ -55,6 +55,11 @@ pub struct RunArgs {
         requires = "dry_run"
     )]
     pub show_skipped: bool,
+    #[arg(
+        long,
+        help = "Enable debug output (shows script execution time, exit codes, etc.)"
+    )]
+    pub debug: bool,
 }
 
 #[derive(Args)]
@@ -77,6 +82,11 @@ pub struct ResumeArgs {
         requires = "dry_run"
     )]
     pub show_skipped: bool,
+    #[arg(
+        long,
+        help = "Enable debug output (shows script execution time, exit codes, etc.)"
+    )]
+    pub debug: bool,
 }
 
 #[derive(Args)]

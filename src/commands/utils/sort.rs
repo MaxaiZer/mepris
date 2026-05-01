@@ -2,7 +2,8 @@ use crate::commands::utils::check_step_env;
 use crate::commands::utils::filters::{AllFiltersResult, StepFilter};
 use crate::config::expr::eval_os_expr;
 use crate::config::{Require, Step, StepSelectionReason};
-use crate::runner::{ScriptResult, run_noninteractive_script};
+use crate::runner::run_noninteractive_script;
+use crate::runner::script::ScriptStatus;
 use crate::system::os_info::OsInfo;
 use crate::{runner, utils};
 use anyhow::{Context, bail};
@@ -229,9 +230,9 @@ fn filter_requires(steps: &mut [Step], os_info: &OsInfo) -> anyhow::Result<()> {
                     require.id, step.id
                 ))?;
 
-                match run {
-                    ScriptResult::Success => {}
-                    ScriptResult::NotZeroExitStatus(_) => continue,
+                match run.status {
+                    ScriptStatus::Success => {}
+                    ScriptStatus::Failed(_) => continue,
                 }
             }
 

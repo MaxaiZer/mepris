@@ -181,8 +181,8 @@ where
         let mut indent = 0;
 
         if let Some(scope) = ctx.event_scope(event) {
+            let spans_with_indent = [SpanType::StepCheck.as_str(), SpanType::Filter.as_str()];
             for span in scope.from_root() {
-                let spans_with_indent = [SpanType::StepCheck.as_str(), SpanType::Filter.as_str()];
                 if spans_with_indent.contains(&span.metadata().name()) {
                     indent += 1;
                 }
@@ -198,12 +198,6 @@ where
             let width = total_steps.to_string().len();
             format!("[{:>width$}/{}]", current_step_num, total_steps)
         };
-
-        if level == Level::WARN
-            && let Some(msg) = v.fields.get("message")
-        {
-            _ = writeln!(out, "{} {}", "Warning:".yellow(), msg);
-        }
 
         let event_type = v
             .fields
@@ -319,8 +313,15 @@ where
                 }
             }
             Unknown => {
-                if let Some(msg) = v.fields.get("message") {
-                    _ = writeln!(out, "{}", msg);
+                if v.fields.get("message").is_none() {
+                    return;
+                }
+
+                let msg = v.fields.get("message").unwrap();
+                match level {
+                    Level::WARN => _ = writeln!(out, "{} {}", "Warning:".yellow(), msg),
+                    Level::DEBUG => _ = writeln!(out, "{pad}{}", msg),
+                    _ => _ = writeln!(out, "{}", msg),
                 }
             }
         }

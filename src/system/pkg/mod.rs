@@ -337,7 +337,7 @@ fn run_cacheable_is_installed(
 
         let packages = cache.entry(cache_id).or_insert_with(|| {
             debug!(
-                "[DEBUG] package cache is empty for {}, populating...",
+                "[DEBUG] Package cache is empty for {}, populating...",
                 manager
             );
 

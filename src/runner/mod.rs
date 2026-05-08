@@ -301,7 +301,7 @@ pub fn run(
 
 fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptChecker) -> Result<()> {
     let _span = debug_span!("check_scripts_before_run").entered();
-    debug!("[DEBUG] Checking scripts before run...");
+    debug!("Checking scripts before run...");
 
     let skip_if_shell_unavailable = true;
     let mut checked_count = 0;

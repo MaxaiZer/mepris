@@ -315,14 +315,13 @@ where
                 }
             }
             Unknown => {
-                if v.fields.get("message").is_none() {
+                let Some(msg) = v.fields.get("message") else {
                     return;
-                }
+                };
 
-                let msg = v.fields.get("message").unwrap();
                 match level {
                     Level::WARN => _ = writeln!(out, "{} {}", "Warning:".yellow(), msg),
-                    Level::DEBUG => _ = writeln!(out, "{pad}{}", msg),
+                    Level::DEBUG => _ = writeln!(out, "{pad}[DEBUG] {}", msg),
                     _ => _ = writeln!(out, "{}", msg),
                 }
             },

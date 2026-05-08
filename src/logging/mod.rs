@@ -45,7 +45,7 @@ struct SpanCommonData {
 #[derive(EnumString, Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum EventType {
-    DryRunCompleted,
+    DryRunPlanGenerated,
     RunCompleted,
     UserDecision,
     ScriptStarted,
@@ -70,7 +70,7 @@ impl EventType {
             EventType::PackagesCheckCompleted => "packages_check_completed",
             EventType::StepCheckStarted => "step_check_started",
             EventType::Unknown => "unknown",
-            EventType::DryRunCompleted => "dry_run_completed",
+            EventType::DryRunPlanGenerated => "dry_run_plan_generated",
             EventType::RunCompleted => "run_completed",
             EventType::ScriptCompleted => "script_completed",
             EventType::CompletedStepSkipped => "completed_step_skipped",
@@ -307,10 +307,10 @@ where
                     v.fields.get("packages").unwrap_or(&"?".into())
                 );
             }
-            EventType::DryRunCompleted => {
+            EventType::DryRunPlanGenerated => {
                 _ = writeln!(
                     out,
-                    "[DEBUG] Dry-run completed in {duration_from_nearest_span_str}"
+                    "[DEBUG] Execution plan generated in {duration_from_nearest_span_str}"
                 );
             }
             EventType::RunCompleted => {

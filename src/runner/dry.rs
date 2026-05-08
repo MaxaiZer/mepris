@@ -106,6 +106,6 @@ pub fn run(steps: &[Step]) -> anyhow::Result<RunPlan> {
         res.steps_to_run.push(step_dry_run);
     }
 
-    debug!(event_type = %EventType::DryRunCompleted.as_str());
+    debug!(event_type = %EventType::DryRunPlanGenerated.as_str());
     Ok(res)
 }

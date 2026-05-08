@@ -210,8 +210,8 @@ pub fn filter_steps<'a>(
     tags_expr: &Option<String>,
     start_step_id: &Option<String>,
 ) -> anyhow::Result<AllFiltersResult<'a>> {
+    debug!("[DEBUG] Filtering steps...");
     let _span = debug_span!(SpanType::Filter.as_str()).entered();
-    debug!(event_type=%EventType::FilterStarted);
 
     let mut res = AllFiltersResult::new();
 

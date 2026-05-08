@@ -219,6 +219,7 @@ pub fn run(
     let mut steps: Vec<Step> = steps.iter().map(|s| Step::from(s, &aliases)).collect();
     check_scripts_before_run(&steps, script_checker)?;
 
+    let _span = info_span!("run").entered();
     if params.dry_run {
         return dry::run(&steps).map(Some);
     }
@@ -226,7 +227,6 @@ pub fn run(
     let mut interactive = interactor.is_some();
     let mut execution_results: HashMap<String, ExecutionResult> = HashMap::new();
     let total_steps = steps.len();
-    let _span = info_span!("run").entered();
 
     for (i, step) in steps.iter_mut().enumerate() {
         let _span = info_span!(
@@ -301,6 +301,7 @@ pub fn run(
 
 fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptChecker) -> Result<()> {
     let _span = debug_span!("check_scripts_before_run").entered();
+    debug!("[DEBUG] Checking scripts before run...");
 
     let skip_if_shell_unavailable = true;
     let mut checked_count = 0;

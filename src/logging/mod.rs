@@ -45,6 +45,7 @@ struct SpanCommonData {
 #[derive(EnumString, Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum EventType {
+    DryRunCompleted,
     RunCompleted,
     UserDecision,
     ScriptStarted,
@@ -54,7 +55,6 @@ pub enum EventType {
     PackagesInstallStarted,
     StepCheckStarted,
     StepCheckFinished,
-    FilterStarted,
     FilterCompleted,
     StepRunStarted,
     StepRunFinished,
@@ -69,13 +69,13 @@ impl EventType {
             EventType::PackagesCheckCompleted => "packages_check_completed",
             EventType::StepCheckStarted => "step_check_started",
             EventType::Unknown => "unknown",
+            EventType::DryRunCompleted => "dry_run_completed",
             EventType::RunCompleted => "run_completed",
             EventType::ScriptCompleted => "script_completed",
             EventType::CompletedStepSkipped => "completed_step_skipped",
             EventType::StepCheckFinished => "step_check_finished",
             EventType::ScriptsCheckCompleted => "scripts_check_completed",
             EventType::FilterCompleted => "filter_completed",
-            EventType::FilterStarted => "filter_started",
             EventType::StepRunStarted => "step_run_started",
             EventType::StepRunFinished => "step_run_finished",
             EventType::PackagesInstallStarted => "packages_install_started",
@@ -272,7 +272,6 @@ where
                     duration_from_nearest_span_str
                 )
             }
-            EventType::FilterStarted => _ = writeln!(out, "[DEBUG] Filtering steps"),
             EventType::FilterCompleted => {
                 _ = writeln!(
                     out,
@@ -300,6 +299,9 @@ where
                     v.fields.get("packages").unwrap_or(&"?".into())
                 );
             }
+            EventType::DryRunCompleted => {
+                _ = writeln!(out, "[DEBUG] Dry-run completed in {duration_from_nearest_span_str}");
+            }
             EventType::RunCompleted => {
                 let interactive = v
                     .fields
@@ -323,7 +325,7 @@ where
                     Level::DEBUG => _ = writeln!(out, "{pad}{}", msg),
                     _ => _ = writeln!(out, "{}", msg),
                 }
-            }
+            },
         }
     }
 }

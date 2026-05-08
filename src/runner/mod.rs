@@ -168,6 +168,7 @@ impl Step {
             let _packages_span = debug_span!("check_packages").entered();
 
             for pkg in self.packages.iter() {
+                let _package_span = debug_span!(SpanType::PackageCheck.as_str()).entered();
                 if !self.package_manager.is_installed(&pkg.name)? {
                     not_installed_pkgs.push(pkg.name.clone());
                 }

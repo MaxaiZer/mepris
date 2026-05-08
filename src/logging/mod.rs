@@ -59,6 +59,7 @@ pub enum EventType {
     StepRunStarted,
     StepRunFinished,
     CompletedStepSkipped,
+    CachePopulationCompleted,
     Unknown,
 }
 
@@ -80,6 +81,7 @@ impl EventType {
             EventType::StepRunFinished => "step_run_finished",
             EventType::PackagesInstallStarted => "packages_install_started",
             EventType::ScriptStarted => "script_started",
+            EventType::CachePopulationCompleted => "cache_population_completed",
         }
     }
 }
@@ -88,6 +90,7 @@ impl EventType {
 #[strum(serialize_all = "snake_case")]
 pub enum SpanType {
     StepCheck,
+    PackageCheck,
     Filter,
     Unknown,
 }
@@ -98,6 +101,7 @@ impl SpanType {
             SpanType::StepCheck => "step_check",
             SpanType::Unknown => "unknown",
             SpanType::Filter => "filter",
+            SpanType::PackageCheck => "package_check",
         }
     }
 }
@@ -181,7 +185,11 @@ where
         let mut indent = 0;
 
         if let Some(scope) = ctx.event_scope(event) {
-            let spans_with_indent = [SpanType::StepCheck.as_str(), SpanType::Filter.as_str()];
+            let spans_with_indent = [
+                SpanType::StepCheck.as_str(),
+                SpanType::Filter.as_str(),
+                SpanType::PackageCheck.as_str(),
+            ];
             for span in scope.from_root() {
                 if spans_with_indent.contains(&span.metadata().name()) {
                     indent += 1;
@@ -300,7 +308,10 @@ where
                 );
             }
             EventType::DryRunCompleted => {
-                _ = writeln!(out, "[DEBUG] Dry-run completed in {duration_from_nearest_span_str}");
+                _ = writeln!(
+                    out,
+                    "[DEBUG] Dry-run completed in {duration_from_nearest_span_str}"
+                );
             }
             EventType::RunCompleted => {
                 let interactive = v
@@ -314,6 +325,12 @@ where
                     _ = writeln!(out, "✅ Run completed")
                 }
             }
+            EventType::CachePopulationCompleted => {
+                _ = writeln!(
+                    out,
+                    "{pad}[DEBUG] Cache populated in {duration_from_nearest_span_str}"
+                );
+            }
             Unknown => {
                 let Some(msg) = v.fields.get("message") else {
                     return;
@@ -324,7 +341,7 @@ where
                     Level::DEBUG => _ = writeln!(out, "{pad}[DEBUG] {}", msg),
                     _ => _ = writeln!(out, "{}", msg),
                 }
-            },
+            }
         }
     }
 }

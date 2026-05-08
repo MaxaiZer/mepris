@@ -1,3 +1,4 @@
+use crate::logging::EventType;
 use crate::system::os_info::{OS_INFO, Platform};
 use crate::system::pkg::parsers::parse_packages_list_func;
 use anyhow::{Context, bail};
@@ -9,7 +10,7 @@ use std::fs;
 use std::process::{Command, Output, Stdio};
 use strum_macros::{Display, EnumIter, EnumString};
 use tempfile::NamedTempFile;
-use tracing::debug;
+use tracing::{debug, debug_span};
 use which::which;
 
 mod parsers;
@@ -336,10 +337,8 @@ fn run_cacheable_is_installed(
         let cache_id = manager.to_string();
 
         let packages = cache.entry(cache_id).or_insert_with(|| {
-            debug!(
-                "Package cache is empty for {}, populating...",
-                manager
-            );
+            debug!("Package cache is empty for {}, populating...", manager);
+            let _span = debug_span!("cache_population").entered();
 
             let output = if manager == &PackageManager::Winget {
                 run_win_command_with_file_output(cmd).unwrap()
@@ -347,7 +346,8 @@ fn run_cacheable_is_installed(
                 let res = run_command(cmd).unwrap();
                 String::from_utf8_lossy(&res.stdout).to_string()
             };
-
+            
+            debug!(event_type=%EventType::CachePopulationCompleted);
             parse(output).unwrap()
         });
 

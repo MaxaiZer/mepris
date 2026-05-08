@@ -1,10 +1,10 @@
 use crate::config::StepSelectionReason;
+use crate::logging::EventType;
 use crate::runner::{Step, StepCompletedResult};
 use crate::system::shell::is_shell_available;
 use std::collections::HashSet;
 use std::fmt;
-use tracing::{debug, info};
-use crate::logging::EventType;
+use tracing::debug;
 
 #[derive(Debug, Default)]
 pub struct StepRun {
@@ -105,7 +105,7 @@ pub fn run(steps: &[Step]) -> anyhow::Result<RunPlan> {
 
         res.steps_to_run.push(step_dry_run);
     }
-    
+
     debug!(event_type = %EventType::DryRunCompleted.as_str());
     Ok(res)
 }

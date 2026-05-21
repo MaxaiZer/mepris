@@ -99,6 +99,24 @@ Primarily intended for use in shell completions.
 
 ---
 
+### Validate
+
+```bash
+mepris validate -f config.yaml
+```
+
+Validate configuration and script syntax.  
+If no steps are selected via filters, scripts of all steps are validated. Otherwise, only scripts of selected steps are validated.
+
+```bash
+mepris validate -f config.yaml -t "backend && !docker"
+mepris validate -f config.yaml -s step1 -s step2
+```
+
+Filtering works the same as in the run command.
+
+---
+
 ## Shell completion
 
 ```bash

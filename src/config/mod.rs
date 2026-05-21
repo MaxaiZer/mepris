@@ -7,10 +7,11 @@ mod parser;
 mod steps;
 mod validate;
 
+pub use crate::config::validate::ValidationMode;
 pub use steps::*;
 
-pub fn load_steps(file: &str) -> anyhow::Result<Vec<Step>> {
+pub fn load_steps(file: &str, mode: ValidationMode) -> anyhow::Result<Vec<Step>> {
     let steps = parser::parse(file)?;
-    validate::validate(&steps)?;
+    validate::validate(&steps, mode)?;
     Ok(steps)
 }

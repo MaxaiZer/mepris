@@ -2,6 +2,7 @@ use std::{collections::HashSet, io::Write, path::Path};
 
 use crate::commands::utils::filters::{filter_by_os, filter_by_tags};
 use crate::config;
+use crate::config::ValidationMode;
 use crate::{
     cli::ListStepsArgs,
     config::{Step, expr::eval_os_expr},
@@ -15,7 +16,7 @@ use comfy_table::{
 };
 
 pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
-    let steps = config::load_steps(&args.file)?;
+    let steps = config::load_steps(&args.file, ValidationMode::IdIntegrity)?;
 
     let mut steps = steps.iter().collect::<Vec<&Step>>();
     if !args.all {

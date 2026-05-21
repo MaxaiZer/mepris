@@ -2,7 +2,7 @@ use super::utils::{RunStateSaver, check_env, load_env};
 use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByStartId, ByTags, ByWhenScript};
 use crate::commands::utils::filters::{ExcludedStep, ExcludedStepVecExt, StepFilter, filter_steps};
 use crate::commands::utils::sort::toposort_steps;
-use crate::config::StepSelectionReason;
+use crate::config::{StepSelectionReason, ValidationMode};
 use crate::runner::dry::StepRun;
 use crate::runner::script_checker::DefaultScriptChecker;
 use crate::runner::{CliInteractor, Interactor, StepCompletedResult};
@@ -36,7 +36,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
         None
     };
 
-    let steps = config::load_steps(&args.file)?;
+    let steps = config::load_steps(&args.file, ValidationMode::Full)?;
     if steps.is_empty() {
         bail!("The file doesn't contain any steps");
     }
@@ -44,6 +44,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     let filter_result = filter_steps(
         &steps,
         &OS_INFO,
+        true,
         &args.steps,
         &args.tags_expr,
         &args.start_step_id,
@@ -387,8 +388,15 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res =
-            filter_steps(&steps, &os_info, &vec![], &Some("tag".to_string()), &None).unwrap();
+        let filter_res = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &vec![],
+            &Some("tag".to_string()),
+            &None,
+        )
+        .unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step3",
@@ -434,7 +442,7 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res = filter_steps(&steps, &os_info, &vec![], &None, &None).unwrap();
+        let filter_res = filter_steps(&steps, &os_info, true, &vec![], &None, &None).unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step3",
@@ -480,7 +488,7 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res = filter_steps(&steps, &os_info, &vec![], &None, &None).unwrap();
+        let filter_res = filter_steps(&steps, &os_info, true, &vec![], &None, &None).unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step3",
@@ -520,8 +528,15 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res =
-            filter_steps(&steps, &os_info, &vec![], &None, &Some("step3".to_string())).unwrap();
+        let filter_res = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &vec![],
+            &None,
+            &Some("step3".to_string()),
+        )
+        .unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step3",
@@ -568,8 +583,15 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res =
-            filter_steps(&steps, &os_info, &vec![], &Some("tag".to_string()), &None).unwrap();
+        let filter_res = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &vec![],
+            &Some("tag".to_string()),
+            &None,
+        )
+        .unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step3",
@@ -630,8 +652,15 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res =
-            filter_steps(&steps, &os_info, &vec![], &Some("tag".to_string()), &None).unwrap();
+        let filter_res = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &vec![],
+            &Some("tag".to_string()),
+            &None,
+        )
+        .unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step4",
@@ -706,6 +735,7 @@ mod tests {
         let filter_res = filter_steps(
             &steps,
             &os_info,
+            true,
             &vec![],
             &Some("tag".to_string()),
             &Some("step5".to_string()),
@@ -769,8 +799,15 @@ mod tests {
         ];
         let os_info = create_os_info();
 
-        let filter_res =
-            filter_steps(&steps, &os_info, &vec!["step3".to_string()], &None, &None).unwrap();
+        let filter_res = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &vec!["step3".to_string()],
+            &None,
+            &None,
+        )
+        .unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step3",
@@ -809,7 +846,7 @@ mod tests {
         }];
         let os_info = create_os_info();
 
-        let filter_res = filter_steps(&steps, &os_info, &vec![], &None, &None).unwrap();
+        let filter_res = filter_steps(&steps, &os_info, true, &vec![], &None, &None).unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![create_step_run(
                 "step1",
@@ -844,7 +881,7 @@ mod tests {
         }];
         let os_info = create_os_info();
 
-        let filter_res = filter_steps(&steps, &os_info, &vec![], &None, &None).unwrap();
+        let filter_res = filter_steps(&steps, &os_info, true, &vec![], &None, &None).unwrap();
         let dry_run_plan = RunPlan {
             steps_to_run: vec![],
         };

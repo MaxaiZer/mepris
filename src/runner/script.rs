@@ -9,6 +9,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use std::{env, thread};
+use tempfile::Builder;
+use tempfile::TempPath;
 
 pub struct Script {
     pub shell: Shell,
@@ -67,16 +69,20 @@ pub fn run_script(
     out: &mut dyn Write,
 ) -> anyhow::Result<ScriptResult> {
     if let Some(script_checker) = script_checker {
-        if !script_checker.is_checked(script) {
-            script_checker.check_script(script, false)?;
+        if requires_syntax_check_before_run(script.shell.clone())
+            && !script_checker.is_checked(script)
+        {
+            script_checker
+                .check_script(script, false)
+                .context("validation failed")?;
         }
     }
 
-    let (cmd, args) = get_script_cmd(script);
+    let (cmd, args, _temp_file) = get_script_cmd(script);
     let time = Instant::now();
     let status = run_interactive_command(
         dir,
-        (cmd, args),
+        (cmd, &args),
         env::var("MEPRIS_TEST_SCRIPT_OUTPUT").is_ok(),
         out,
     )?;
@@ -94,7 +100,7 @@ pub fn run_noninteractive_script(
         }
     }
 
-    let (cmd, args) = get_script_cmd(script);
+    let (cmd, args, _temp_file) = get_script_cmd(script);
     let mut child = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
@@ -109,13 +115,39 @@ pub fn run_noninteractive_script(
     get_script_result(&status, &time)
 }
 
-fn get_script_cmd(script: &Script) -> (&str, Vec<&str>) {
+fn get_script_cmd(script: &Script) -> (&str, Vec<String>, Option<TempPath>) {
     match script.shell {
-        Shell::Bash => (Shell::Bash.get_command(), vec!["-c", &*script.code]),
-        Shell::PowerShell | Shell::PowerShellCore => (
-            script.shell.get_command(),
-            vec!["-NoProfile", "-Command", &*script.code],
+        Shell::Bash => (
+            Shell::Bash.get_command(),
+            vec!["-c".into(), script.code.clone()],
+            None,
         ),
+        Shell::PowerShell | Shell::PowerShellCore => {
+            let mut temp = Builder::new()
+                .suffix(".ps1")
+                .tempfile()
+                .context("failed to create temp file")
+                .unwrap();
+
+            writeln!(temp, "{}", script.code)
+                .context("failed to write script to temp file")
+                .unwrap();
+
+            let path = temp.path().to_string_lossy().to_string();
+            let temp_path = temp.into_temp_path();
+            (
+                script.shell.get_command(),
+                vec!["-NoProfile".into(), "-File".into(), path],
+                Some(temp_path),
+            )
+        }
+    }
+}
+
+fn requires_syntax_check_before_run(shell: Shell) -> bool {
+    match shell {
+        Shell::Bash => true,
+        Shell::PowerShell | Shell::PowerShellCore => false,
     }
 }
 
@@ -142,7 +174,7 @@ fn get_script_result(
 
 fn run_interactive_command(
     dir: &Path,
-    (cmd, args): (&str, Vec<&str>),
+    (cmd, args): (&str, &[String]),
     testable_output: bool,
     out: &mut dyn Write,
 ) -> anyhow::Result<std::process::ExitStatus> {

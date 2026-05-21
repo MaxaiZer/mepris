@@ -95,7 +95,7 @@ pub struct FilterResult<'a> {
     pub not_matching: Vec<&'a Step>,
 }
 
-pub fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> anyhow::Result<FilterResult<'a>> {
+fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> anyhow::Result<FilterResult<'a>> {
     let map: HashMap<&str, &Step> = steps.iter().copied().map(|s| (s.id.as_str(), s)).collect();
 
     let unknown_steps: Vec<_> = ids
@@ -133,7 +133,7 @@ pub fn filter_by_tags<'a>(steps: &[&'a Step], tags_expr: &str) -> anyhow::Result
     })
 }
 
-pub fn filter_steps_start_with_id<'a>(
+fn filter_steps_start_with_id<'a>(
     steps: &[&'a Step],
     start_step_id: &str,
 ) -> anyhow::Result<FilterResult<'a>> {
@@ -206,6 +206,7 @@ pub fn filter_by_when_script<'a>(steps: &[&'a Step]) -> anyhow::Result<FilterRes
 pub fn filter_steps<'a>(
     steps: &'a [Step],
     os_info: &OsInfo,
+    filter_by_when: bool,
     steps_ids: &[String],
     tags_expr: &Option<String>,
     start_step_id: &Option<String>,
@@ -251,33 +252,35 @@ pub fn filter_steps<'a>(
     //     * steps that can be pulled as dependencies (have provides) are also checked
     //
     // This avoids running when-scripts for steps that can never be executed.
-    let filter_by_when: FilterResult = filter_by_when_script(
-        &all_steps
+    if filter_by_when {
+        let filter_by_when: FilterResult = filter_by_when_script(
+            &all_steps
+                .iter()
+                .filter(|s| {
+                    if res.is_excluded_by(s.id.as_str(), ByOs) {
+                        return false;
+                    }
+
+                    let has_ids_filter = !steps_ids.is_empty();
+                    let can_be_dependency = !s.provides.is_empty();
+                    let explicitly_selected = !res.is_excluded_by(s.id.as_str(), ByIds)
+                        && !res.is_excluded_by(s.id.as_str(), ByTags);
+
+                    if !has_ids_filter {
+                        return true;
+                    }
+
+                    explicitly_selected || can_be_dependency
+                })
+                .cloned()
+                .collect::<Vec<&Step>>(),
+        )?;
+
+        filter_by_when
+            .not_matching
             .iter()
-            .filter(|s| {
-                if res.is_excluded_by(s.id.as_str(), ByOs) {
-                    return false;
-                }
-
-                let has_ids_filter = !steps_ids.is_empty();
-                let can_be_dependency = !s.provides.is_empty();
-                let explicitly_selected = !res.is_excluded_by(s.id.as_str(), ByIds)
-                    && !res.is_excluded_by(s.id.as_str(), ByTags);
-
-                if !has_ids_filter {
-                    return true;
-                }
-
-                explicitly_selected || can_be_dependency
-            })
-            .cloned()
-            .collect::<Vec<&Step>>(),
-    )?;
-
-    filter_by_when
-        .not_matching
-        .iter()
-        .for_each(|s| res.add_failed_step(s, StepFilter::ByWhenScript));
+            .for_each(|s| res.add_failed_step(s, StepFilter::ByWhenScript));
+    }
 
     if let Some(start_step_id) = start_step_id.as_ref() {
         let filter_start_with_id = filter_steps_start_with_id(&all_steps, start_step_id)?;
@@ -340,6 +343,7 @@ mod tests {
         let result = filter_steps(
             &steps,
             &os_info,
+            true,
             &["step1".to_string(), "step3".to_string()],
             &None,
             &None,
@@ -364,8 +368,15 @@ mod tests {
         ];
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
-        let result =
-            filter_steps(&steps, &os_info, &[], &Some("linux".to_string()), &None).unwrap();
+        let result = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &[],
+            &Some("linux".to_string()),
+            &None,
+        )
+        .unwrap();
 
         assert_eq!(result.filtered_steps.len(), 2);
         assert_eq!(result.excluded_by(ByTags).len(), 1);
@@ -384,19 +395,34 @@ mod tests {
         ];
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
-        let result = filter_steps(&steps, &os_info, &[], &Some("tag4".to_string()), &None);
+        let result = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &[],
+            &Some("tag4".to_string()),
+            &None,
+        );
         assert!(result.is_err());
 
         let result = filter_steps(
             &steps,
             &os_info,
+            true,
             &[],
             &Some("tag1 || tag4".to_string()),
             &None,
         );
         assert!(result.is_err());
 
-        let result = filter_steps(&steps, &os_info, &[], &Some("!tag4".to_string()), &None);
+        let result = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &[],
+            &Some("!tag4".to_string()),
+            &None,
+        );
         assert!(result.is_err());
     }
 
@@ -409,8 +435,15 @@ mod tests {
         ];
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
-        let result =
-            filter_steps(&steps, &os_info, &[], &None, &Some("step2".to_string())).unwrap();
+        let result = filter_steps(
+            &steps,
+            &os_info,
+            true,
+            &[],
+            &None,
+            &Some("step2".to_string()),
+        )
+        .unwrap();
 
         assert_eq!(result.filtered_steps.len(), 2);
         assert!(result.filtered_steps.iter().any(|s| s.id == "step2"));
@@ -436,7 +469,7 @@ mod tests {
         ];
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
-        let result = filter_steps(&steps, &os_info, &[], &None, &None).unwrap();
+        let result = filter_steps(&steps, &os_info, true, &[], &None, &None).unwrap();
 
         assert_eq!(result.filtered_steps.len(), 2);
         assert!(result.filtered_steps.iter().any(|s| s.id == "step1"));
@@ -475,6 +508,7 @@ mod tests {
         let result = filter_steps(
             &steps,
             &os_info,
+            true,
             &[
                 "step1".to_string(),
                 "step2".to_string(),
@@ -566,7 +600,7 @@ mod tests {
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
         let steps_ids = vec!["step1".to_string()];
-        let result = filter_steps(&steps, &os_info, &steps_ids, &None, &None).unwrap();
+        let result = filter_steps(&steps, &os_info, true, &steps_ids, &None, &None).unwrap();
 
         assert!(result.excluded_by(ByOs).iter().any(|s| s.id == "step2"));
 

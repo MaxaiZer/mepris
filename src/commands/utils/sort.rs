@@ -42,16 +42,10 @@ pub fn toposort_steps(
 
     let mut providers: HashMap<String, Vec<usize>> = HashMap::new();
     let mut unknown_requires: HashMap<String, Vec<String>> = HashMap::new();
-    let mut self_references: HashSet<String> = HashSet::new();
 
     fill_providers(&steps, &mut providers)?;
-    add_dependencies(
-        &mut steps,
-        &mut providers,
-        &mut unknown_requires,
-        &mut self_references,
-    )?;
-    check_for_errors(&self_references, &unknown_requires)?;
+    add_dependencies(&mut steps, &mut providers, &mut unknown_requires)?;
+    check_for_errors(&unknown_requires)?;
 
     let mut graph: utils::graph::Graph<usize> = utils::graph::Graph::new();
 
@@ -116,7 +110,6 @@ fn add_dependencies(
     steps: &mut [Step],
     providers: &mut HashMap<String, Vec<usize>>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
-    self_references: &mut HashSet<String>,
 ) -> anyhow::Result<()> {
     let mut stack: Vec<usize> = Vec::new();
     let mut checked: HashSet<usize> = HashSet::new();
@@ -131,15 +124,7 @@ fn add_dependencies(
             continue;
         }
 
-        push_step_dependencies(
-            step,
-            i,
-            providers,
-            self_references,
-            unknown_requires,
-            &mut stack,
-            &mut checked,
-        )?;
+        push_step_dependencies(step, providers, unknown_requires, &mut stack, &mut checked)?;
     }
 
     while let Some(step_idx) = stack.pop() {
@@ -150,9 +135,7 @@ fn add_dependencies(
 
         push_step_dependencies(
             &steps[step_idx],
-            step_idx,
             providers,
-            self_references,
             unknown_requires,
             &mut stack,
             &mut checked,
@@ -163,20 +146,12 @@ fn add_dependencies(
 
 fn push_step_dependencies(
     step: &Step,
-    idx: usize,
     providers: &HashMap<String, Vec<usize>>,
-    self_references: &mut HashSet<String>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
     stack: &mut Vec<usize>,
     checked: &mut HashSet<usize>,
 ) -> anyhow::Result<()> {
-    let mut checked_step_requires: HashSet<String> = HashSet::new();
-
     for require in &step.requires {
-        if checked_step_requires.contains(&require.id) {
-            bail!("duplicated require '{}' in step '{}'", require.id, step.id);
-        }
-
         if let Some(provider_steps) = providers.get(&require.id) {
             if provider_steps.len() > 1 {
                 bail!(
@@ -187,9 +162,7 @@ fn push_step_dependencies(
 
             let provider_step_idx = provider_steps[0];
 
-            if provider_step_idx == idx {
-                self_references.insert(require.id.clone());
-            } else if !checked.contains(&provider_step_idx) {
+            if !checked.contains(&provider_step_idx) {
                 stack.push(provider_step_idx);
                 checked.insert(provider_step_idx);
             }
@@ -199,8 +172,6 @@ fn push_step_dependencies(
                 .or_default()
                 .push(require.id.clone());
         }
-
-        checked_step_requires.insert(require.id.clone());
     }
     Ok(())
 }
@@ -244,10 +215,7 @@ fn filter_requires(steps: &mut [Step], os_info: &OsInfo) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn check_for_errors(
-    self_references: &HashSet<String>,
-    unknown_requires: &HashMap<String, Vec<String>>,
-) -> anyhow::Result<()> {
+fn check_for_errors(unknown_requires: &HashMap<String, Vec<String>>) -> anyhow::Result<()> {
     let mut errors: Vec<String> = Vec::new();
     if !unknown_requires.is_empty() {
         let mut unknown_require_errs: Vec<String> = Vec::new();
@@ -256,17 +224,6 @@ fn check_for_errors(
             unknown_require_errs.push(format!("{} -> {}", step_id, deps_str));
         }
         errors.push("unknown requires: ".to_string() + &unknown_require_errs.join(", "));
-    }
-    if !self_references.is_empty() {
-        let err_str: String = format!(
-            "self-references: {}",
-            self_references
-                .iter()
-                .map(|x| x.as_str())
-                .collect::<Vec<&str>>()
-                .join(", ")
-        );
-        errors.push(err_str);
     }
 
     if !errors.is_empty() {
@@ -557,48 +514,6 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unknown requires"));
-    }
-
-    #[test]
-    fn test_doubled_require() {
-        let step1 = make_step("step1", vec!["postgres", "postgres"], vec![]);
-        let filter_res = make_filters_result(vec![&step1], vec![]);
-
-        let result = toposort_steps(&filter_res, &make_os_info());
-
-        assert!(result.is_err());
-        let err_str = result.unwrap_err().to_string();
-        assert!(
-            err_str.contains("duplicated require 'postgres' in step 'step1'"),
-            "unexpected err: {}",
-            err_str
-        );
-    }
-
-    #[test]
-    fn test_doubled_provide() {
-        let step1 = make_step("step1", vec![], vec!["postgres", "postgres"]);
-        let filter_res = make_filters_result(vec![&step1], vec![]);
-
-        let result = toposort_steps(&filter_res, &make_os_info());
-
-        assert!(result.is_err());
-        let err_str = result.unwrap_err().to_string();
-        assert!(
-            err_str.contains("duplicated provide 'postgres' in step 'step1'"),
-            "unexpected err: {}",
-            err_str
-        );
-    }
-
-    #[test]
-    fn test_self_reference() {
-        let step1 = make_step("step1", vec!["step1_completed"], vec!["step1_completed"]);
-        let filter_res = make_filters_result(vec![&step1], vec![]);
-
-        let result = toposort_steps(&filter_res, &make_os_info());
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("self-references"));
     }
 
     #[test]

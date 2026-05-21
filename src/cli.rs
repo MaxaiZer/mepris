@@ -15,12 +15,32 @@ pub enum Commands {
     Run(RunArgs),
     #[command(about = "Resume failed run", long_about = None)]
     Resume(ResumeArgs),
+    #[command(
+        about = "Validate configuration and script syntax",
+        long_about = "Validate configuration and script syntax.\n\
+        If no steps are selected via filters, scripts of all steps are validated. Otherwise, only scripts of selected steps are checked."
+    )]
+    Validate(ValidateArgs),
     #[command(about = "List steps", long_about = None)]
     ListSteps(ListStepsArgs),
     #[command(about = "List tags", long_about = None)]
     ListTags(ListTagsArgs),
     #[command(about = "Generate shell completion scripts")]
     Completion(CompletionArgs),
+}
+
+#[derive(Args, Default)]
+pub struct ValidateArgs {
+    #[arg(short, long, required = true, help = "Path to configuration YAML file")]
+    pub file: String,
+    #[arg(
+        short,
+        long = "tag",
+        help = "Filter steps by tags expression, e.g. !(tag1 || tag2) && tag3"
+    )]
+    pub tags_expr: Option<String>,
+    #[arg(short, long = "step", help = "Filter steps by their IDs")]
+    pub steps: Vec<String>,
 }
 
 #[derive(Args, Default)]

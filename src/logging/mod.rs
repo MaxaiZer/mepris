@@ -273,12 +273,21 @@ where
                 );
             }
             EventType::ScriptsCheckCompleted => {
-                _ = writeln!(
-                    out,
-                    "[DEBUG] Checked {} scripts in {}\n-------",
-                    v.fields.get("count").unwrap_or(&"?".into()),
-                    duration_from_nearest_span_str
-                )
+                let count = v.fields.get("count").unwrap().parse().unwrap_or(0);
+
+                if count > 0 {
+                    if duration_from_nearest_span >= Duration::from_secs(1) {
+                        _ = writeln!(
+                            out,
+                            "Checked {} scripts in {}",
+                            count, duration_from_nearest_span_str
+                        );
+                    } else {
+                        _ = writeln!(out, "Checked {} scripts", count);
+                    }
+                } else {
+                    _ = writeln!(out, "No scripts to check");
+                }
             }
             EventType::FilterCompleted => {
                 _ = writeln!(

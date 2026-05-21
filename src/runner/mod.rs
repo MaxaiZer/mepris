@@ -82,7 +82,7 @@ pub struct Step {
 }
 
 impl Step {
-    fn from(config_step: &config::Step, aliases: &PackageAliases) -> Self {
+    pub fn from(config_step: &config::Step, aliases: &PackageAliases) -> Self {
         let resolve_script = |script: &Option<config::Script>| -> Option<Script> {
             if script.is_none() {
                 return None;
@@ -218,7 +218,6 @@ pub fn run(
 ) -> Result<Option<dry::RunPlan>> {
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
     let mut steps: Vec<Step> = steps.iter().map(|s| Step::from(s, &aliases)).collect();
-    check_scripts_before_run(&steps, script_checker)?;
 
     let _span = info_span!("run").entered();
     if params.dry_run {
@@ -298,43 +297,6 @@ pub fn run(
 
     info!(event_type = %EventType::RunCompleted.as_str(), interactive = interactive);
     Ok(None)
-}
-
-fn check_scripts_before_run(steps: &[Step], script_checker: &mut dyn ScriptChecker) -> Result<()> {
-    let _span = debug_span!("check_scripts_before_run").entered();
-    debug!("Checking scripts before run...");
-
-    let skip_if_shell_unavailable = true;
-    let mut checked_count = 0;
-    let check_step_script = |step: &Step,
-                             script_name: &str,
-                             script: &Option<Script>,
-                             script_checker: &mut dyn ScriptChecker|
-     -> Result<usize> {
-        if let Some(script) = script {
-            script_checker
-                .check_script(script, skip_if_shell_unavailable)
-                .context(format!(
-                    "Failed to check {script_name} in {}, step '{}'",
-                    step.source_file, step.id
-                ))?;
-            return Ok(1);
-        }
-        Ok(0)
-    };
-
-    for step in steps.iter() {
-        checked_count += check_step_script(step, "pre-script", &step.pre_script, script_checker)?;
-        checked_count += check_step_script(step, "script", &step.script, script_checker)?;
-        checked_count +=
-            check_step_script(step, "check-script", &step.check_script, script_checker)?;
-    }
-
-    if checked_count > 0 {
-        debug!(event_type = %EventType::ScriptsCheckCompleted.as_str(), count=checked_count);
-    }
-
-    Ok(())
 }
 
 fn run_step(
@@ -664,6 +626,50 @@ mod tests {
             trace_output.as_string()
         );
 
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_run_bash_syntax_check() -> Result<()> {
+        mock_available_shells(HashSet::from_iter([Shell::Bash]));
+        let steps = vec![config::Step {
+            id: "step".to_string(),
+            script: Some(config::Script {
+                shell: Some(Shell::Bash),
+                code: r#"echo "what"
+                    exit '0"#
+                    .to_string(),
+            }),
+            source_file: "/file.yaml".to_string(),
+            selection_reason: Some(MatchedFilter),
+            dependency_of: vec!["step2".to_string()],
+            ..Default::default()
+        }];
+
+        let mut res: Result<Option<RunPlan>> = Ok(None);
+        let trace_output = run_with_tracing(false, || {
+            res = run(
+                &steps,
+                &RunParameters {
+                    dry_run: false,
+                    source_file_path: Path::new("/file.yaml").to_path_buf(),
+                },
+                &FakeStateSaver,
+                &mut DefaultScriptChecker::new(),
+                None,
+                &mut sink(),
+            )
+        });
+
+        let res_str = res.as_ref().err().unwrap().to_string();
+
+        assert!(res.is_err());
+        assert!(
+            res_str.contains("failed to run script: validation failed"),
+            "unexpected output: {}",
+            res_str
+        );
         Ok(())
     }
 

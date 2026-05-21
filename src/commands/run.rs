@@ -19,6 +19,7 @@ use colored::Colorize;
 use std::collections::HashSet;
 use std::io::{BufReader, Write, stdin};
 use std::path::Path;
+use tracing::info;
 
 pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     let state_saver = RunStateSaver {
@@ -49,6 +50,11 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
         &args.tags_expr,
         &args.start_step_id,
     )?;
+
+    if filter_result.filtered_steps.is_empty() && !args.dry_run {
+        info!("ℹ️ No steps match the selected filters or current environment");
+        return Ok(());
+    }
 
     load_env(&args.file)?;
     check_env(&filter_result.filtered_steps)?;

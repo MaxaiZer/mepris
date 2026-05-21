@@ -5,6 +5,7 @@ use crate::{
     utils,
 };
 use anyhow::{Context, Result};
+use indexmap::IndexSet;
 
 pub fn parse(file: &str) -> Result<Vec<Step>> {
     let mut visited_files = HashSet::new();
@@ -69,7 +70,8 @@ fn parse_recursive(
 fn normalize_steps(steps: &mut Vec<Step>) {
     for step in steps {
         if step.provides.is_empty() && !step.packages.is_empty() {
-            step.provides = step.packages.clone();
+            let unique_packages = step.packages.iter().cloned().collect::<IndexSet<String>>();
+            step.provides = unique_packages.iter().cloned().collect();
         }
     }
 }
@@ -299,5 +301,30 @@ mod tests {
             &Shell::PowerShellCore
         );
         assert_eq!(steps[0].script.as_ref().unwrap().code, "exit 0");
+    }
+
+    #[test]
+    fn test_deduplicates_packages_into_provides() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let parent_path = dir.path().join("file.yaml");
+
+        fs::write(
+            &parent_path,
+            r#"
+            steps:
+              - id: "step1"
+                packages: [pkg1, pkg2, pkg3, pkg2, pkg4]
+            "#,
+        )
+        .expect("Failed to write file.yaml");
+
+        let steps = parse(parent_path.to_str().unwrap()).expect("Failed to parse YAML");
+
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].provides.len(), 4);
+        assert_eq!(steps[0].provides[0], "pkg1");
+        assert_eq!(steps[0].provides[1], "pkg2");
+        assert_eq!(steps[0].provides[2], "pkg3");
+        assert_eq!(steps[0].provides[3], "pkg4");
     }
 }

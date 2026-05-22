@@ -33,6 +33,15 @@ const config: Config = {
     locales: ['en'],
   },
 
+  plugins: [
+    [
+      require.resolve("@easyops-cn/docusaurus-search-local"),
+      {
+        hashed: true,
+      },
+    ]
+  ],
+
   presets: [
     [
       'classic',
@@ -64,6 +73,10 @@ const config: Config = {
         src: 'img/logo.svg',
       },*/
       items: [
+        {
+          type: 'search',
+          position: 'right',
+        },
         {
           href: 'https://github.com/maxaizer/mepris',
           label: 'GitHub',

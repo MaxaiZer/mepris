@@ -16,7 +16,7 @@ const config: Config = {
 
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: process.env.NODE_ENV == "development" ? "/" : "/mepris/",
+  baseUrl: "/mepris/",
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
@@ -38,8 +38,9 @@ const config: Config = {
       require.resolve("@easyops-cn/docusaurus-search-local"),
       {
         hashed: true,
+        docsRouteBasePath: "/",
       },
-    ]
+    ],
   ],
 
   presets: [

@@ -276,7 +276,7 @@ pub fn run(
             bail!("cannot run step with broken dependencies without interactive mode")
         }
 
-        run_step(step, script_checker, out)?;
+        run_step(step, script_checker, out).context(format!("failed to run step '{}'", step.id))?;
 
         if has_broken_deps {
             execution_results.insert(step.id.clone(), ExecutionResult::CompletedWithMissingDeps);
@@ -554,12 +554,13 @@ mod tests {
             &mut output,
         );
 
-        assert!(res.is_err());
-        let err_msg = res.unwrap_err().to_string();
+        let err = res.err().unwrap();
+        let messages: Vec<String> = err.chain().map(|e| e.to_string()).collect();
+        
         assert!(
-            err_msg.contains("failed to run check-script: status code 1"),
-            "{}",
-            err_msg
+            messages.contains(&"failed to run check-script: status code 1".to_string()),
+            "unexpected output: {}",
+            messages.join("\n")
         );
 
         Ok(())
@@ -662,13 +663,13 @@ mod tests {
             )
         });
 
-        let res_str = res.as_ref().err().unwrap().to_string();
+        let err = res.err().unwrap();
+        let messages: Vec<String> = err.chain().map(|e| e.to_string()).collect();
 
-        assert!(res.is_err());
         assert!(
-            res_str.contains("failed to run script: validation failed"),
+            messages.contains(&"failed to run script: validation failed".to_string()),
             "unexpected output: {}",
-            res_str
+            messages.join("\n")
         );
         Ok(())
     }

@@ -22,24 +22,28 @@ impl Script {
         let res_shell: Shell = if script.shell.is_some() {
             script.shell.as_ref().unwrap().clone()
         } else {
-            let default_shell = |get_shell: fn(&config::Defaults) -> Option<Shell>| {
-                defaults
-                    .as_ref()
-                    .and_then(get_shell)
-                    .unwrap_or_else(Shell::default_for_current_os)
-            };
-
-            match OS_INFO.platform {
-                Platform::Linux => default_shell(|d| d.linux_shell.clone()),
-                Platform::MacOS => default_shell(|d| d.macos_shell.clone()),
-                Platform::Windows => default_shell(|d| d.windows_shell.clone()),
-            }
+            resolve_shell(OS_INFO.platform, defaults)
         };
 
         Script {
             shell: res_shell,
             code: script.code.clone(),
         }
+    }
+}
+
+pub fn resolve_shell(platform: Platform, defaults: &Option<config::Defaults>) -> Shell {
+    let default_shell = |get_shell: fn(&config::Defaults) -> Option<Shell>| {
+        defaults
+            .as_ref()
+            .and_then(get_shell)
+            .unwrap_or_else(|| Shell::default_for_platform(platform))
+    };
+
+    match platform {
+        Platform::Linux => default_shell(|d| d.linux_shell.clone()),
+        Platform::MacOS => default_shell(|d| d.macos_shell.clone()),
+        Platform::Windows => default_shell(|d| d.windows_shell.clone()),
     }
 }
 
@@ -250,4 +254,61 @@ fn run_interactive_command(
 
     let status = child.wait()?;
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::config::Defaults;
+    use crate::runner::script::resolve_shell;
+    use crate::system::os_info::Platform::{Linux, MacOS, Windows};
+    use crate::system::shell::Shell::{Bash, PowerShell, PowerShellCore};
+
+    #[test]
+    fn test_resolve_shell_no_defaults() {
+        let linux_shell = resolve_shell(Linux, &None);
+        let windows_shell = resolve_shell(Windows, &None);
+        let macos_shell = resolve_shell(MacOS, &None);
+
+        assert_eq!(linux_shell, Bash);
+        assert_eq!(windows_shell, PowerShell);
+        assert_eq!(macos_shell, Bash);
+    }
+
+    #[test]
+    fn test_resolve_shell_none_defaults() {
+
+        let defaults = Defaults {
+            windows_package_manager: None,
+            windows_shell: None,
+            linux_shell: None,
+            macos_shell: None,
+        };
+
+        let linux_shell = resolve_shell(Linux, &Some(defaults.clone()));
+        let windows_shell = resolve_shell(Windows, &Some(defaults.clone()));
+        let macos_shell = resolve_shell(MacOS, &Some(defaults.clone()));
+
+        assert_eq!(linux_shell, Bash);
+        assert_eq!(windows_shell, PowerShell);
+        assert_eq!(macos_shell, Bash);
+    }
+
+    #[test]
+    fn test_resolve_shell_defaults_override() {
+
+        let defaults = Defaults {
+            windows_package_manager: None,
+            windows_shell: Some(Bash),
+            linux_shell: Some(PowerShellCore),
+            macos_shell: Some(PowerShell),
+        };
+
+        let linux_shell = resolve_shell(Linux, &Some(defaults.clone()));
+        let windows_shell = resolve_shell(Windows, &Some(defaults.clone()));
+        let macos_shell = resolve_shell(MacOS, &Some(defaults.clone()));
+
+        assert_eq!(linux_shell, PowerShellCore);
+        assert_eq!(windows_shell, Bash);
+        assert_eq!(macos_shell, PowerShell);
+    }
 }

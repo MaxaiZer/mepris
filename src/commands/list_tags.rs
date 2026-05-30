@@ -9,7 +9,7 @@ pub fn handle(args: ListTagsArgs, out: &mut impl Write) -> Result<()> {
     let steps = config::load_steps(&args.file, ValidationMode::Minimal)?;
 
     let mut steps = steps.iter().collect::<Vec<&Step>>();
-    steps = filter_by_os(&steps, &OS_INFO).map(|res| res.matching)?;
+    steps = filter_by_os(&steps, &OS_INFO).matching;
 
     let mut tags: Vec<&str> = steps
         .iter()

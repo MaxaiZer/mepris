@@ -3,11 +3,8 @@ use std::{collections::HashSet, io::Write, path::Path};
 use crate::commands::utils::filters::{filter_by_os, filter_by_tags};
 use crate::config;
 use crate::config::ValidationMode;
-use crate::{
-    cli::ListStepsArgs,
-    config::{Step, expr::eval_os_expr},
-    system::os_info::OS_INFO,
-};
+use crate::config::expr::os::eval_os_expr;
+use crate::{cli::ListStepsArgs, config::Step, system::os_info::OS_INFO};
 use anyhow::Result;
 use comfy_table::{
     ContentArrangement, Table,
@@ -20,7 +17,7 @@ pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
 
     let mut steps = steps.iter().collect::<Vec<&Step>>();
     if !args.all {
-        steps = filter_by_os(&steps, &OS_INFO).map(|res| res.matching)?;
+        steps = filter_by_os(&steps, &OS_INFO).matching;
     }
 
     if let Some(expr) = args.tags_expr {

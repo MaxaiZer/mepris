@@ -128,7 +128,7 @@ impl<'de> Deserialize<'de> for Require {
             Short(String),
             Full {
                 id: String,
-                #[serde(default, deserialize_with = "expr::parse_os_expr")]
+                #[serde(default, deserialize_with = "expr::os::parse_os_expr")]
                 os: Option<Expr>,
                 #[serde(rename = "when")]
                 when_script: Option<Script>,
@@ -173,7 +173,7 @@ pub struct Step {
     pub id: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default, deserialize_with = "expr::parse_os_expr")]
+    #[serde(default, deserialize_with = "expr::os::parse_os_expr")]
     pub os: Option<Expr>,
     #[serde(default)]
     pub env: Vec<String>,

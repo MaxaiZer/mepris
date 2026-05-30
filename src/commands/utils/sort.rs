@@ -1,6 +1,6 @@
 use crate::commands::utils::check_step_env;
 use crate::commands::utils::filters::{AllFiltersResult, StepFilter};
-use crate::config::expr::eval_os_expr;
+use crate::config::expr::os::eval_os_expr;
 use crate::config::{Require, Step, StepSelectionReason};
 use crate::runner::run_noninteractive_script;
 use crate::runner::script::ScriptStatus;

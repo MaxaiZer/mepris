@@ -1,10 +1,9 @@
 use strum::IntoEnumIterator;
 use which::which;
 
-use crate::system::os_info::{OS_INFO, Platform};
+use crate::system::os_info::Platform;
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::ops::Deref;
 use std::sync::Mutex;
 use strum_macros::EnumIter;
 
@@ -28,9 +27,9 @@ impl Shell {
             Self::PowerShellCore => "pwsh",
         }
     }
-    pub fn default_for_current_os() -> Self {
-        let info = OS_INFO.deref();
-        match info.platform {
+
+    pub fn default_for_platform(platform: Platform) -> Self {
+        match platform {
             Platform::Linux => Shell::Bash,
             Platform::MacOS => Shell::Bash,
             Platform::Windows => Shell::PowerShell,

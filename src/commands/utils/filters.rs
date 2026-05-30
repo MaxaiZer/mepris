@@ -1,7 +1,9 @@
-use crate::commands::utils::check_tags_exist;
-use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByTags};
+use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByStartId, ByTags, ByWhenScript};
+use crate::commands::utils::{check_env, check_tags_exist};
 use crate::config::Step;
-use crate::config::expr::{eval_os_expr, eval_tags_expr, parse};
+use crate::config::expr::os::eval_os_expr;
+use crate::config::expr::parse;
+use crate::config::expr::tags::eval_tags_expr;
 use crate::logging::{EventType, SpanType};
 use crate::runner;
 use crate::runner::script::{ScriptStatus, run_noninteractive_script};
@@ -10,6 +12,46 @@ use anyhow::{Context, bail};
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, debug_span};
+
+#[derive(Default)]
+pub struct FilterConfig {
+    apply_ids: Vec<String>,
+    apply_tags: Option<String>,
+    apply_os: Option<OsInfo>,
+    apply_when: bool,
+    apply_start_step: Option<String>,
+}
+
+impl FilterConfig {
+    pub fn new() -> FilterConfig {
+        FilterConfig::default()
+    }
+
+    pub fn apply_ids(mut self, ids: Vec<String>) -> FilterConfig {
+        self.apply_ids = ids;
+        self
+    }
+
+    pub fn apply_tags(mut self, tags: String) -> FilterConfig {
+        self.apply_tags = Some(tags);
+        self
+    }
+
+    pub fn apply_os(mut self, os: OsInfo) -> FilterConfig {
+        self.apply_os = Some(os);
+        self
+    }
+
+    pub fn apply_when(mut self) -> FilterConfig {
+        self.apply_when = true;
+        self
+    }
+
+    pub fn apply_start_step(mut self, start_step: String) -> FilterConfig {
+        self.apply_start_step = Some(start_step);
+        self
+    }
+}
 
 pub struct AllFiltersResult<'a> {
     pub filtered_steps: Vec<&'a Step>,
@@ -32,6 +74,13 @@ impl<'a> AllFiltersResult<'a> {
                 step,
                 failed_filters: vec![filter],
             });
+    }
+
+    pub fn add_not_matching(&mut self, filter_result: &FilterResult<'a>) {
+        filter_result
+            .not_matching
+            .iter()
+            .for_each(|s| self.add_failed_step(s, filter_result.filter));
     }
 
     #[cfg(test)]
@@ -91,6 +140,7 @@ pub enum StepFilter {
 }
 
 pub struct FilterResult<'a> {
+    pub filter: StepFilter,
     pub matching: Vec<&'a Step>,
     pub not_matching: Vec<&'a Step>,
 }
@@ -109,6 +159,7 @@ fn filter_by_ids<'a>(steps: &[&'a Step], ids: &[String]) -> anyhow::Result<Filte
     }
 
     Ok(FilterResult {
+        filter: ByIds,
         matching: ids
             .iter()
             .map(|id| *map.get(id.as_str()).unwrap())
@@ -128,6 +179,7 @@ pub fn filter_by_tags<'a>(steps: &[&'a Step], tags_expr: &str) -> anyhow::Result
     let (matching, not_matching): (Vec<_>, Vec<_>) =
         steps.iter().partition(|s| eval_tags_expr(&expr, &s.tags));
     Ok(FilterResult {
+        filter: ByTags,
         matching,
         not_matching,
     })
@@ -141,6 +193,7 @@ fn filter_steps_start_with_id<'a>(
         let (not_matching, matching) = steps.split_at(pos);
 
         Ok(FilterResult {
+            filter: ByStartId,
             matching: matching.to_vec(),
             not_matching: not_matching.to_vec(),
         })
@@ -149,7 +202,7 @@ fn filter_steps_start_with_id<'a>(
     }
 }
 
-pub fn filter_by_os<'a>(steps: &[&'a Step], os_info: &OsInfo) -> anyhow::Result<FilterResult<'a>> {
+pub fn filter_by_os<'a>(steps: &[&'a Step], os_info: &OsInfo) -> FilterResult<'a> {
     let (matching, not_matching): (Vec<_>, Vec<_>) = steps.iter().partition(|s| {
         if s.os.is_none() {
             return true;
@@ -161,15 +214,24 @@ pub fn filter_by_os<'a>(steps: &[&'a Step], os_info: &OsInfo) -> anyhow::Result<
         }
         false
     });
-    Ok(FilterResult {
+    FilterResult {
+        filter: ByOs,
         matching,
         not_matching,
-    })
+    }
 }
 
 pub fn filter_by_when_script<'a>(steps: &[&'a Step]) -> anyhow::Result<FilterResult<'a>> {
     let mut matching = Vec::new();
     let mut not_matching = Vec::new();
+
+    check_env(
+        &steps
+            .iter()
+            .filter(|s| s.when_script.is_some())
+            .cloned()
+            .collect::<Vec<&Step>>(),
+    )?;
 
     for s in steps {
         if s.when_script.is_none() {
@@ -197,6 +259,7 @@ pub fn filter_by_when_script<'a>(steps: &[&'a Step]) -> anyhow::Result<FilterRes
     }
 
     Ok(FilterResult {
+        filter: ByWhenScript,
         matching,
         not_matching,
     })
@@ -205,11 +268,7 @@ pub fn filter_by_when_script<'a>(steps: &[&'a Step]) -> anyhow::Result<FilterRes
 //filters priority: steps_ids > tags_expr > os > when-script > start_step_id
 pub fn filter_steps<'a>(
     steps: &'a [Step],
-    os_info: &OsInfo,
-    filter_by_when: bool,
-    steps_ids: &[String],
-    tags_expr: &Option<String>,
-    start_step_id: &Option<String>,
+    config: &FilterConfig,
 ) -> anyhow::Result<AllFiltersResult<'a>> {
     debug!("Filtering steps...");
     let _span = debug_span!(SpanType::Filter.as_str()).entered();
@@ -219,28 +278,21 @@ pub fn filter_steps<'a>(
     let all_steps = steps.iter().collect::<Vec<&Step>>();
     let mut filtered_by_ids: Vec<&Step> = Vec::new();
 
-    if !steps_ids.is_empty() {
-        let filter_by_ids = filter_by_ids(&all_steps, steps_ids)?;
-        filter_by_ids
-            .not_matching
-            .iter()
-            .for_each(|s| res.add_failed_step(s, StepFilter::ByIds));
+    if !config.apply_ids.is_empty() {
+        let filter_by_ids = filter_by_ids(&all_steps, &config.apply_ids)?;
+        res.add_not_matching(&filter_by_ids);
         filtered_by_ids = filter_by_ids.matching; //to preserve ids order of selected steps
     }
 
-    if tags_expr.is_some() {
-        let filter_by_tags = filter_by_tags(&all_steps, tags_expr.as_ref().unwrap())?;
-        filter_by_tags
-            .not_matching
-            .iter()
-            .for_each(|s| res.add_failed_step(s, StepFilter::ByTags));
+    if let Some(tags_expr) = config.apply_tags.as_ref() {
+        let filter_by_tags = filter_by_tags(&all_steps, tags_expr)?;
+        res.add_not_matching(&filter_by_tags);
     }
 
-    let filter_by_os = filter_by_os(&all_steps, os_info)?;
-    filter_by_os
-        .not_matching
-        .iter()
-        .for_each(|s| res.add_failed_step(s, StepFilter::ByOs));
+    if let Some(os_info) = config.apply_os.as_ref() {
+        let filter_by_os = filter_by_os(&all_steps, os_info);
+        res.add_not_matching(&filter_by_os);
+    }
 
     // Run when-scripts only for steps that may participate in execution graph.
     //
@@ -252,7 +304,7 @@ pub fn filter_steps<'a>(
     //     * steps that can be pulled as dependencies (have provides) are also checked
     //
     // This avoids running when-scripts for steps that can never be executed.
-    if filter_by_when {
+    if config.apply_when {
         let filter_by_when: FilterResult = filter_by_when_script(
             &all_steps
                 .iter()
@@ -261,7 +313,7 @@ pub fn filter_steps<'a>(
                         return false;
                     }
 
-                    let has_ids_filter = !steps_ids.is_empty();
+                    let has_ids_filter = !config.apply_ids.is_empty();
                     let can_be_dependency = !s.provides.is_empty();
                     let explicitly_selected = !res.is_excluded_by(s.id.as_str(), ByIds)
                         && !res.is_excluded_by(s.id.as_str(), ByTags);
@@ -276,18 +328,12 @@ pub fn filter_steps<'a>(
                 .collect::<Vec<&Step>>(),
         )?;
 
-        filter_by_when
-            .not_matching
-            .iter()
-            .for_each(|s| res.add_failed_step(s, StepFilter::ByWhenScript));
+        res.add_not_matching(&filter_by_when);
     }
 
-    if let Some(start_step_id) = start_step_id.as_ref() {
+    if let Some(start_step_id) = config.apply_start_step.as_ref() {
         let filter_start_with_id = filter_steps_start_with_id(&all_steps, start_step_id)?;
-        filter_start_with_id
-            .not_matching
-            .iter()
-            .for_each(|s| res.add_failed_step(s, StepFilter::ByStartId));
+        res.add_not_matching(&filter_start_with_id);
     }
 
     if filtered_by_ids.is_empty() {
@@ -342,11 +388,10 @@ mod tests {
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &["step1".to_string(), "step3".to_string()],
-            &None,
-            &None,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_ids(vec!["step1".to_string(), "step3".to_string()]),
         )
         .unwrap();
 
@@ -370,11 +415,10 @@ mod tests {
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &[],
-            &Some("linux".to_string()),
-            &None,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_tags("linux".to_string()),
         )
         .unwrap();
 
@@ -397,31 +441,28 @@ mod tests {
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &[],
-            &Some("tag4".to_string()),
-            &None,
+            &FilterConfig::new()
+                .apply_os(os_info.clone())
+                .apply_when()
+                .apply_tags("tag4".to_string()),
         );
         assert!(result.is_err());
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &[],
-            &Some("tag1 || tag4".to_string()),
-            &None,
+            &FilterConfig::new()
+                .apply_os(os_info.clone())
+                .apply_when()
+                .apply_tags("tag1 || tag4".to_string()),
         );
         assert!(result.is_err());
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &[],
-            &Some("!tag4".to_string()),
-            &None,
+            &FilterConfig::new()
+                .apply_os(os_info.clone())
+                .apply_when()
+                .apply_tags("!tag4".to_string()),
         );
         assert!(result.is_err());
     }
@@ -437,11 +478,10 @@ mod tests {
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &[],
-            &None,
-            &Some("step2".to_string()),
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_start_step("step2".to_string()),
         )
         .unwrap();
 
@@ -469,7 +509,8 @@ mod tests {
         ];
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
-        let result = filter_steps(&steps, &os_info, true, &[], &None, &None).unwrap();
+        let result =
+            filter_steps(&steps, &FilterConfig::new().apply_os(os_info).apply_when()).unwrap();
 
         assert_eq!(result.filtered_steps.len(), 2);
         assert!(result.filtered_steps.iter().any(|s| s.id == "step1"));
@@ -507,15 +548,16 @@ mod tests {
 
         let result = filter_steps(
             &steps,
-            &os_info,
-            true,
-            &[
-                "step1".to_string(),
-                "step2".to_string(),
-                "step4".to_string(),
-            ],
-            &Some("tag1".to_string()),
-            &Some("step2".to_string()),
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_ids(vec![
+                    "step1".to_string(),
+                    "step2".to_string(),
+                    "step4".to_string(),
+                ])
+                .apply_tags("tag1".to_string())
+                .apply_start_step("step2".to_string()),
         )
         .unwrap();
 
@@ -600,7 +642,14 @@ mod tests {
         let os_info = create_os_info(Platform::Linux, None, vec![]);
 
         let steps_ids = vec!["step1".to_string()];
-        let result = filter_steps(&steps, &os_info, true, &steps_ids, &None, &None).unwrap();
+        let result = filter_steps(
+            &steps,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_ids(steps_ids),
+        )
+        .unwrap();
 
         assert!(result.excluded_by(ByOs).iter().any(|s| s.id == "step2"));
 

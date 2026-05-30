@@ -12,7 +12,7 @@ pub static OS_INFO: Lazy<OsInfo> = Lazy::new(|| get_os_info().expect("Failed to 
 pub static DEFAULT_PACKAGE_MANAGER: Lazy<PackageManager> =
     Lazy::new(|| default_package_manager().expect("Failed to define the default package manager"));
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
     Linux,
     MacOS,
@@ -38,7 +38,7 @@ impl Platform {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OsInfo {
     pub platform: Platform,
     pub id: Option<String>,

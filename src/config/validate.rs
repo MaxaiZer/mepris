@@ -84,17 +84,11 @@ fn check_provides_requires(steps: &[Step], errors: &mut Vec<String>) {
             let req = &require.id;
 
             if !seen_requires.insert(req.clone()) {
-                errors.push(format!(
-                    "step '{}': duplicated require '{}'",
-                    step.id, req
-                ));
+                errors.push(format!("step '{}': duplicated require '{}'", step.id, req));
             }
 
             if seen_provides.contains(req) {
-                errors.push(format!(
-                    "step '{}': self-reference on '{}'",
-                    step.id, req
-                ));
+                errors.push(format!("step '{}': self-reference on '{}'", step.id, req));
             }
 
             if !available_provides.contains_key(req) {

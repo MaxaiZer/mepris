@@ -397,17 +397,17 @@ fn format_duration(d: Duration) -> String {
     let secs = d.as_secs_f64();
 
     if secs < 0.001 {
-        format!("{:.0} µs", secs * 1_000_000.0)
+        format!("{:.0}µs", secs * 1_000_000.0)
     } else if secs < 1.0 {
         let ms = secs * 1000.0;
 
         if ms.fract() < 0.05 {
-            format!("{:.0} ms", ms)
+            format!("{:.0}ms", ms)
         } else {
-            format!("{:.1} ms", ms)
+            format!("{:.1}ms", ms)
         }
     } else {
-        format!("{:.2} s", secs)
+        format!("{:.2}s", secs)
     }
 }
 

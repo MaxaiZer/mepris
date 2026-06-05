@@ -15,7 +15,7 @@ use crate::{
 use anyhow::{Context, Result, bail};
 use std::collections::HashSet;
 use std::io::Write;
-use tracing::{debug_span, info, warn};
+use tracing::{info, info_span, warn};
 
 impl From<&ValidateArgs> for FilterConfig {
     fn from(args: &ValidateArgs) -> Self {
@@ -48,7 +48,7 @@ pub fn handle(args: ValidateArgs, _: &mut impl Write) -> Result<()> {
 }
 
 fn check_scripts(steps: &[Step], script_checker: &mut dyn ScriptChecker) -> Result<()> {
-    let _span = debug_span!("check_scripts").entered();
+    let _span = info_span!("check_scripts").entered();
     info!("Checking scripts...");
 
     let mut checked_count = 0;

@@ -37,7 +37,7 @@ Each step supports the following **optional** fields:
 - `pre_script`: A script that runs before installing packages or the main script. Purpose: prepare the environment for installing packages (for example, adding repositories or package sources).
 - `when`: An arbitrary script-filter (see [Filtering by script](filtering.md#by-script))
 - `tags`: List of tags to categorize steps.
-- `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `flatpak`, `snap`, `zypper`, `brew`, `scoop`, `choco`, `winget`, `cargo`, `npm`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
+- `package_source`: Overrides the default package manager for this step. Possible package managers: `apt`, `dnf`, `pacman`, `flatpak`, `zypper`, `brew`, `scoop`, `choco`, `winget`, `cargo`, `npm`. If `aur` is specified, program will use `yay` or `paru` (whichever is available)
 - `packages`: List of packages to install via the system or overridden package manager. Can use [Package aliases](package-aliases.md)
 - `script`: The main shell script to execute.
 - `check`: A verification script used to determine whether the step is completed. (see [Step completion](dependencies.md#step-completion))

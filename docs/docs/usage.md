@@ -119,12 +119,12 @@ Filtering works the same as in the run command.
 
 ## Shell completion
 
-```bash
-mepris completion bash
-mepris completion zsh
-mepris completion fish
-mepris completion powershell
-```
+| Shell        | Installation command (in config)                                                                                                                                             |
+|--------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Bash         | `source <(mepris completion bash)`                                                                                                                                           |
+| Zsh          | `autoload -Uz compinit` <br/> `compinit` <br/> `source <(mepris completion zsh)`                                                                                             |
+| Fish         | `mepris completion fish \| source`                                                                                                                                           |
+| Powershell   | `Invoke-Expression (& mepris completion powershell \| Out-String)`                                                                                                           |
+| Nushell      | `mkdir ($nu.data-dir \| path join "vendor/autoload")` <br/> `mepris completion nushell \| save -f (` <br/> `$nu.data-dir \| path join "vendor/autoload/mepris.nu"` <br/> `)` |
 
-Generates shell completion scripts.  
-Supports advanced completion for step IDs and tags (**only available for Fish and PowerShell**)
+Provides context-aware completion for steps and tags.

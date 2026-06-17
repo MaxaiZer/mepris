@@ -1,8 +1,8 @@
 function __fish_mepris_step
-    set -l file (__fish_get_file_arg)
+    set -l file (__fish_get_arg_value -f --file)
     set -l tags (__fish_get_arg_value -t --tag)
 
-    if test -n "$file" -a -f "$file"
+    if test -n "$file"
         if test -n "$tags"
             mepris list-steps -f $file -t $tags -p 2>/dev/null
         else
@@ -12,17 +12,11 @@ function __fish_mepris_step
 end
 
 function __fish_mepris_tag
-    set -l file (__fish_get_file_arg)
-    set -l file (eval echo $file)
+    set -l file (__fish_get_arg_value -f --file)
 
-    if test -n "$file" -a -f "$file"
+    if test -n "$file"
         mepris list-tags -f $file 2>/dev/null
     end
-end
-
-function __fish_get_file_arg
-    set -l file (__fish_get_arg_value -f --file)
-    echo (eval echo $file) #convert ~/... to valid path
 end
 
 function __fish_get_arg_value

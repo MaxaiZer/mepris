@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -138,5 +139,44 @@ pub struct ListTagsArgs {
 #[derive(Args)]
 pub struct CompletionArgs {
     #[arg(value_enum)]
-    pub shell: clap_complete::Shell,
+    pub shell: Shell,
 }
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    #[value(name = "powershell")]
+    PowerShell,
+    Nushell,
+}
+
+fn normalize_path(path: &str) -> anyhow::Result<String> {
+    let expanded = shellexpand::tilde(path);
+    expanded.parse().context("failed to normalize file path")
+}
+
+pub trait Normalize {
+    fn normalize(self) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+}
+
+macro_rules! normalize_file {
+    ($t:ty) => {
+        impl Normalize for $t {
+            fn normalize(self) -> anyhow::Result<Self> {
+                Ok(Self {
+                    file: normalize_path(&self.file)?,
+                    ..self
+                })
+            }
+        }
+    };
+}
+
+normalize_file!(RunArgs);
+normalize_file!(ValidateArgs);
+normalize_file!(ListStepsArgs);
+normalize_file!(ListTagsArgs);

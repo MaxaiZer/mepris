@@ -64,6 +64,10 @@ Only three shells are supported: `bash`, `powershell` (legacy), `pwsh` (cross-pl
 :::
 All scripts (`when`, `pre_script`, `script`, `check`) are executed with their working directory set to the folder where their YAML file resides.
 
+#### Default error policy
+
+Bash scripts are executed with `-e` (fail-fast behavior equivalent to `set -e`). PowerShell / pwsh scripts automatically prepend `$ErrorActionPreference = 'Stop'` and `$PSNativeCommandUseErrorActionPreference = $true`. This means scripts fail immediately if a command returns a non-zero exit code.
+
 ### Execution order
 
 After step is filtered by tags / OS / when-script, it executes like this:

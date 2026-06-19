@@ -123,7 +123,7 @@ fn get_script_cmd(script: &Script) -> (&str, Vec<String>, Option<TempPath>) {
     match script.shell {
         Shell::Bash => (
             Shell::Bash.get_command(),
-            vec!["-c".into(), script.code.clone()],
+            vec!["-e".into(), "-c".into(), script.code.clone()],
             None,
         ),
         Shell::PowerShell | Shell::PowerShellCore => {
@@ -132,8 +132,11 @@ fn get_script_cmd(script: &Script) -> (&str, Vec<String>, Option<TempPath>) {
                 .tempfile()
                 .context("failed to create temp file")
                 .unwrap();
-
-            writeln!(temp, "{}", script.code)
+            let error_policy = r#"
+            $ErrorActionPreference = 'Stop'
+            $PSNativeCommandUseErrorActionPreference = $true
+            "#;
+            writeln!(temp, "{error_policy}\n{}", script.code)
                 .context("failed to write script to temp file")
                 .unwrap();
 
@@ -259,9 +262,32 @@ fn run_interactive_command(
 #[cfg(test)]
 mod tests {
     use crate::config::Defaults;
+    use crate::EnvGuard;
     use crate::runner::script::resolve_shell;
     use crate::system::os_info::Platform::{Linux, MacOS, Windows};
     use crate::system::shell::Shell::{Bash, PowerShell, PowerShellCore};
+
+    #[test]
+    #[cfg(unix)]
+    fn test_bash_error_default_stops_on_failure() {
+        use crate::system::shell::mock_available_shells;
+        use std::collections::HashSet;
+
+        mock_available_shells(HashSet::from_iter([Bash]));
+        let _guard = EnvGuard::new("MEPRIS_TEST_SCRIPT_OUTPUT", "1");
+
+        let script = super::Script {
+            shell: Bash,
+            code: "false; false && echo should-not-reach; echo should-not-reach".to_string(),
+        };
+        let mut buf = Vec::new();
+
+        let result = super::run_script(&script, std::path::Path::new("/"), None, &mut buf);
+        let output = String::from_utf8_lossy(&buf).to_string();
+        assert!(result.is_ok());
+        assert!(!output.contains("should-not-reach"), "unexpected output: {}", output);
+        assert_eq!(result.unwrap().status.code(), 1);
+    }
 
     #[test]
     fn test_resolve_shell_no_defaults() {

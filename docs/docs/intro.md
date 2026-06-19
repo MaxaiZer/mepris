@@ -16,6 +16,7 @@ Mepris features:
 
 ## Installation
 
+🐧
 ```bash
 curl -L https://github.com/MaxaiZer/mepris/releases/latest/download/mepris-x86_64-unknown-linux-gnu.zip \
   -o /tmp/mepris.zip \
@@ -23,5 +24,8 @@ curl -L https://github.com/MaxaiZer/mepris/releases/latest/download/mepris-x86_6
 && sudo chmod +x /usr/local/bin/mepris \
 && rm /tmp/mepris.zip
 ```
-
-or something similar on Windows (🤮)
+🪟
+```
+scoop bucket add maxaizer-bucket https://github.com/MaxaiZer/scoop-bucket
+scoop install mepris
+```

@@ -54,10 +54,16 @@ steps:
 
 ## Installation
 
+🐧
 ```bash
 curl -L https://github.com/MaxaiZer/mepris/releases/latest/download/mepris-x86_64-unknown-linux-gnu.zip \
   -o /tmp/mepris.zip \
 && unzip -p /tmp/mepris.zip mepris | sudo tee /usr/local/bin/mepris > /dev/null \
 && sudo chmod +x /usr/local/bin/mepris \
 && rm /tmp/mepris.zip
+```
+🪟
+```
+scoop bucket add maxaizer-bucket https://github.com/MaxaiZer/scoop-bucket
+scoop install mepris
 ```

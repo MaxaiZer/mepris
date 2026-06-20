@@ -44,11 +44,11 @@ Each step supports the following **optional** fields:
 
 ### Scripts
 
-Default shell for running scripts is bash for Linux/macOS and powershell (the built-in legacy one) for Windows.
+Default shell for running scripts is `bash` for Linux/macOS and `powershell` for Windows.
 
 ```yaml
 script: |
-  echo "bash" # shell will depend on current OS
+  echo "hello" # shell will depend on current OS
 ```
 
 To use different shell, specify it explicitly with the syntax:
@@ -57,10 +57,10 @@ To use different shell, specify it explicitly with the syntax:
 script:
   shell: pwsh
   run: |
-    echo "pwsh" # will use pwsh
+    echo "hello" # will use pwsh
 ```
 :::note
-Only three shells are supported: `bash`, `powershell` (legacy), `pwsh` (cross-platform).  
+Only three shells are supported: `bash`, `powershell` (Windows PowerShell, Windows-only), `pwsh` (PowerShell 7+, cross-platform).  
 :::
 All scripts (`when`, `pre_script`, `script`, `check`) are executed with their working directory set to the folder where their YAML file resides.
 

@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Dependencies
 
-## step completion
+## Step completion
 
 In configuration, each step can declare **what it provides** and **what it requires**.  
 The program resolves the graph automatically: a step will only run after all steps that provide its `requires` are **completed**.

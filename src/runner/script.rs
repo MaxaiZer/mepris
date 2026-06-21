@@ -147,7 +147,12 @@ fn get_script_cmd(script: &Script) -> (&str, Vec<String>, Option<TempPath>) {
                 vec!["-NoProfile".into(), "-File".into(), path],
                 Some(temp_path),
             )
-        }
+        },
+        Shell::Nushell => (
+            Shell::Nushell.get_command(),
+            vec!["-n".into(), "-c".into(), script.code.clone()],
+            None,
+        )
     }
 }
 
@@ -155,6 +160,7 @@ fn requires_syntax_check_before_run(shell: Shell) -> bool {
     match shell {
         Shell::Bash => true,
         Shell::PowerShell | Shell::PowerShellCore => false,
+        Shell::Nushell => false,
     }
 }
 

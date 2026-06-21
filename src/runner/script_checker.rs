@@ -1,11 +1,10 @@
-use std::collections::HashSet;
-use std::{io::Write, process::Command};
-
 use crate::runner::Script;
 use crate::system::shell::Shell;
 use crate::system::shell::is_shell_available;
 use anyhow::{Context, Result, bail};
 use blake3::Hasher;
+use std::collections::HashSet;
+use std::{io::Write, process::Command};
 use tempfile::NamedTempFile;
 
 pub trait ScriptChecker {
@@ -49,9 +48,10 @@ impl ScriptChecker for DefaultScriptChecker {
         let cmd = script.shell.get_command();
         let ps_command = format!("[scriptblock]::Create((Get-Content -Raw '{path_str}'))");
         let args = match script.shell {
-            Shell::Bash => vec!["-n", path_str],
-            Shell::PowerShell => vec!["-NoProfile", "-Command", &ps_command],
-            Shell::PowerShellCore => vec!["-NoProfile", "-Command", &ps_command],
+            Shell::Bash => vec!["-n".to_string(), path_str.to_string()],
+            Shell::PowerShell => vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command],
+            Shell::PowerShellCore => vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command],
+            Shell::Nushell => vec!["-c".to_string(), format!("source {path_str}")],
         };
 
         let output = Command::new(cmd)

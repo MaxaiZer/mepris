@@ -21,9 +21,9 @@ You can override the default settings:
 ```yaml
 defaults:
   windows_package_manager: winget # or scoop / choco
-  windows_shell: powershell # or pwsh
-  linux_shell: bash # or pwsh
-  macos_shell: bash # or pwsh
+  windows_shell: powershell # or pwsh / nu
+  linux_shell: bash # or pwsh / nu
+  macos_shell: bash # or pwsh / nu
 ```
 These defaults apply to all included config files, unless overridden.
 
@@ -59,8 +59,8 @@ script:
   run: |
     echo "hello" # will use pwsh
 ```
-:::note
-Only three shells are supported: `bash`, `powershell` (Windows PowerShell, Windows-only), `pwsh` (PowerShell 7+, cross-platform).  
+:::info
+Supported shells: `bash`, `powershell` (Windows PowerShell, Windows-only), `pwsh` (PowerShell 7+, cross-platform), `nu` (nushell).  
 :::
 All scripts (`when`, `pre_script`, `script`, `check`) are executed with their working directory set to the folder where their YAML file resides.
 

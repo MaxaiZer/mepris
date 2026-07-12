@@ -88,6 +88,11 @@ fn test_env_from_file() {
         r#"
         steps:
           - id: "step1"
+            env: ["PATH3_DEP"]
+            when: "[[ -v PATH3_DEP ]]"
+            provides: [step1-completed]
+
+          - id: "step2"
             env: ["PATH3"]
             script: |
               end=$((SECONDS+10))
@@ -98,21 +103,25 @@ fn test_env_from_file() {
                 echo $PATH3
                 sleep 1
               done
+            requires:
+              - id: step1-completed
+                when: "[[ -v PATH3_DEP ]]"
         "#,
     )
     .expect("Failed to write file.yaml");
 
-    fs::write(&env_file_path, "PATH3=what").expect("Failed to write .env");
+    fs::write(&env_file_path, "PATH3=what\nPATH3_DEP=what2").expect("Failed to write .env");
 
     let res = handle(
         RunArgs {
             file: file_path.to_str().unwrap().to_string(),
             dry_run: true,
+            steps: vec!["step2".to_string()],
             ..Default::default()
         },
         &mut io::sink(),
     );
-    assert!(res.is_ok());
+    assert!(res.is_ok(), "{}", res.unwrap_err());
 }
 
 #[test]

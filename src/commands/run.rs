@@ -55,6 +55,8 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
         None
     };
 
+    load_env(&args.file)?;
+
     let steps = config::load_steps(&args.file, ValidationMode::Full)?;
     if steps.is_empty() {
         bail!("The file doesn't contain any steps");
@@ -67,7 +69,6 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
         return Ok(());
     }
 
-    load_env(&args.file)?;
     check_env(&filter_result.filtered_steps)?;
 
     let steps = toposort_steps(&filter_result, &OS_INFO)?;

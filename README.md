@@ -62,7 +62,10 @@ curl -L https://github.com/MaxaiZer/mepris/releases/latest/download/mepris-x86_6
 && sudo chmod +x /usr/local/bin/mepris \
 && rm /tmp/mepris.zip
 ```
-🪟
+🪟  
+**Requires installed Microsoft Visual C++ Redistributable** (can be installed with, for example, `winget install Microsoft.VCRedist.2015+.x64`)
+
+Using [Scoop](https://scoop.sh):
 ```
 scoop bucket add maxaizer-bucket https://github.com/MaxaiZer/scoop-bucket
 scoop install mepris

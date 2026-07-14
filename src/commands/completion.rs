@@ -33,7 +33,7 @@ pub fn handle(args: CompletionArgs, out: &mut impl Write) -> Result<()> {
             let mut generated = String::from_utf8(buf).expect("invalid utf-8");
             generated = generated.replace("STEPS:_default", "STEPS:_mepris_complete_steps");
             generated = generated.replace("TAGS_EXPR:_default", "TAGS_EXPR:_mepris_complete_tags");
-            
+
             writeln!(out, "{}", include_str!("../completions/custom.zsh"))?;
             writeln!(out, "{generated}")?;
         }

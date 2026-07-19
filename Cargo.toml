@@ -33,3 +33,6 @@ shellexpand = "3.1.2"
 [dev-dependencies]
 rstest = "0.26.1"
 serial_test = "3"
+
+[features]
+pwsh-tests = []

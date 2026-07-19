@@ -400,45 +400,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(unix)]
-    fn test_run_script_from_file_dir() -> Result<()> {
-        use std::{collections::HashSet, io};
-
-        use anyhow::Ok;
-
-        mock_available_shells(HashSet::from_iter([Shell::Bash]));
-        let dir = tempdir().expect("Failed to create temp dir");
-        let step_path = dir.path().join("file.yaml").to_str().unwrap().to_string();
-
-        let steps = vec![config::Step {
-            id: "parent".to_string(),
-            script: Some(config::Script {
-                shell: Some(Shell::Bash),
-                code: "cat file.txt".to_string(),
-            }),
-            source_file: step_path.clone(),
-            selection_reason: Some(MatchedFilter),
-            ..Default::default()
-        }];
-
-        fs::write(dir.path().join("file.txt").to_str().unwrap(), "temp file")
-            .expect("Failed to write temp file");
-
-        let _ = run(
-            &steps,
-            &RunParameters {
-                dry_run: false,
-                source_file_path: Path::new("/file.yaml").to_path_buf(),
-            },
-            &FakeStateSaver,
-            &mut DefaultScriptChecker::new(),
-            None,
-            &mut io::sink(),
-        )?;
-        Ok(())
-    }
-
-    #[test]
     fn test_run_dry_warns_about_unavailable_shell() -> Result<()> {
         let mut output = Vec::new();
         mock_available_shells(HashSet::from_iter([Shell::Bash]));

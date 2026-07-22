@@ -51,7 +51,6 @@ impl ScriptChecker for DefaultScriptChecker {
             Shell::Bash => vec!["-n".to_string(), path_str.to_string()],
             Shell::PowerShell => vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command],
             Shell::PowerShellCore => vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command],
-            Shell::Nushell => vec!["-c".to_string(), format!("source {path_str}")],
         };
 
         let output = Command::new(cmd)

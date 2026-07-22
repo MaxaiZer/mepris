@@ -17,8 +17,6 @@ pub enum Shell {
     PowerShell,
     #[serde(rename = "pwsh")]
     PowerShellCore,
-    #[serde(rename = "nu")]
-    Nushell,
 }
 
 impl Shell {
@@ -27,7 +25,6 @@ impl Shell {
             Self::Bash => "bash",
             Self::PowerShell => "powershell",
             Self::PowerShellCore => "pwsh",
-            Self::Nushell => "nu",
         }
     }
 

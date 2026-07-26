@@ -114,7 +114,7 @@ fn add_dependencies(
     let mut stack: Vec<usize> = Vec::new();
     let mut checked: HashSet<usize> = HashSet::new();
 
-    for (i, step) in steps.iter().enumerate() {
+    for step in steps.iter() {
         // matched steps are added before skipped
         if step.selection_reason != Some(StepSelectionReason::MatchedFilter) {
             break;

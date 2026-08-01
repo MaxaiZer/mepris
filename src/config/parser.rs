@@ -35,8 +35,15 @@ fn parse_recursive(
 
     let content = fs::read_to_string(&abs_path)
         .with_context(|| format!("Failed to read file '{abs_path_str}'"))?;
-    let config: Config = serde_yaml::from_str(&content)
-        .with_context(|| format!("YAML parse error in file '{abs_path_str}'"))?;
+    let de = serde_yaml::Deserializer::from_str(&content);
+    let config: Config = serde_path_to_error::deserialize(de).map_err(|e| {
+        crate::error::YamlParseError(crate::error::yaml_error(
+            &abs_path_str,
+            &content,
+            e.inner(),
+            &e.path().to_string(),
+        ))
+    })?;
 
     let config_defaults = Defaults::merge(&inherited_defaults, &config.defaults);
 

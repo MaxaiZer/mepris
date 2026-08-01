@@ -64,9 +64,6 @@ fn test_bash_run_script_from_file_dir() {
             script:
               shell: bash
               run: cat file.txt
-            check_script:
-              shell: bash
-              run: cat file.txt
         "#,
     )
     .expect("Failed to write file.yaml");

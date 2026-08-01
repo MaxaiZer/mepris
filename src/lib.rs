@@ -6,6 +6,7 @@ use commands::{completion, list_steps, list_tags, resume, run};
 pub mod cli;
 pub mod commands;
 pub mod config;
+pub mod error;
 pub mod runner;
 pub mod system;
 mod utils;

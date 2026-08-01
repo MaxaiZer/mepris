@@ -9,6 +9,7 @@ use strum::IntoEnumIterator;
 use strum_macros::Display;
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Defaults {
     pub windows_package_manager: Option<PackageManager>,
     pub windows_shell: Option<Shell>,
@@ -83,30 +84,46 @@ pub struct Script {
     pub code: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FullScript {
+    shell: Shell,
+    #[serde(rename = "run")]
+    code: String,
+}
+
 impl<'de> Deserialize<'de> for Script {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum ScriptDef {
-            Short(String),
-            Full {
-                shell: Shell,
-                #[serde(rename = "run")]
-                code: String,
-            },
-        }
-
-        let value = ScriptDef::deserialize(deserializer)?;
+        /*        let value = ScriptDef::deserialize(deserializer)?;
         Ok(match value {
             ScriptDef::Short(code) => Script { shell: None, code },
-            ScriptDef::Full { shell, code } => Script {
+            ScriptDef::Full( FullScript { shell, code }) => Script {
                 shell: Some(shell),
                 code,
             },
-        })
+        })*/
+
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+
+        match value {
+            serde_yaml::Value::String(code) => Ok(Script { shell: None, code }),
+
+            serde_yaml::Value::Mapping(_) => {
+                let full: FullScript = FullScript::deserialize(value).map_err(de::Error::custom)?;
+
+                Ok(Script {
+                    shell: Some(full.shell),
+                    code: full.code,
+                })
+            }
+
+            _ => Err(de::Error::custom(
+                "script must be either a string or an object with fields 'shell' and 'run'",
+            )),
+        }
     }
 }
 
@@ -117,47 +134,44 @@ pub struct Require {
     pub when_script: Option<Script>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FullRequire {
+    pub id: String,
+    #[serde(default, deserialize_with = "expr::os::parse_os_expr")]
+    pub os: Option<Expr>,
+    #[serde(rename = "when", default)]
+    pub when_script: Option<Script>,
+}
+
 impl<'de> Deserialize<'de> for Require {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum RequireDef {
-            Short(String),
-            Full {
-                id: String,
-                #[serde(default, deserialize_with = "expr::os::parse_os_expr")]
-                os: Option<Expr>,
-                #[serde(rename = "when")]
-                when_script: Option<Script>,
-            },
-        }
-
-        let value = RequireDef::deserialize(deserializer).map_err(|err| {
-            de::Error::custom(format!(
-                "Invalid require format: {}\n\
-                 Expected either a short string (id) or a full object with fields 'id', optional 'os' and optional 'when'.",
-                err
-            ))
-        })?;
-        Ok(match value {
-            RequireDef::Short(id) => Require {
+        let value = serde_yaml::Value::deserialize(deserializer)?;
+        match value {
+            serde_yaml::Value::String(id) => Ok(Require {
                 id,
                 os: None,
                 when_script: None,
-            },
-            RequireDef::Full {
-                id,
-                os,
-                when_script,
-            } => Require {
-                id,
-                os,
-                when_script,
-            },
-        })
+            }),
+
+            serde_yaml::Value::Mapping(_) => {
+                let full: FullRequire =
+                    FullRequire::deserialize(value).map_err(de::Error::custom)?;
+
+                Ok(Require {
+                    id: full.id,
+                    os: full.os,
+                    when_script: full.when_script,
+                })
+            }
+
+            _ => Err(de::Error::custom(
+                "require must be either a string (id) or an object with fields 'id', optional 'os' and optional 'when'",
+            )),
+        }
     }
 }
 
@@ -169,6 +183,7 @@ pub enum StepSelectionReason {
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Step {
     pub id: String,
     #[serde(default)]
@@ -204,6 +219,7 @@ pub struct Step {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     pub includes: Option<Vec<String>>,
     pub defaults: Option<Defaults>,

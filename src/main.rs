@@ -19,7 +19,11 @@ fn main() {
     match mepris::run(cli, &mut out) {
         Ok(_) => {}
         Err(e) => {
-            eprintln!("{} {:#}", "Error:".red().bold(), e);
+            if let Some(yaml_err) = e.downcast_ref::<mepris::error::YamlParseError>() {
+                eprintln!("{:?}", yaml_err.0);
+            } else {
+                eprintln!("{} {:#}", "Error:".red().bold(), e);
+            }
             std::process::exit(1);
         }
     }

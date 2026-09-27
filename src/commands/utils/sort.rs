@@ -37,14 +37,26 @@ pub fn toposort_steps(
     let excluded_steps: Vec<Step> = excluded_steps.into_iter().cloned().collect();
 
     let mut steps = filtered_steps;
-    steps.extend(excluded_steps);
-    filter_requires(&mut steps, os_info)?;
+    steps.extend(excluded_steps); // filtered steps + steps that failed non-strict filters (can be dependencies of filtered steps)
+
+    let completed_steps_idx: HashSet<usize> = steps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| filter_result.is_excluded_by(&s.id, StepFilter::ByPreviousRunState))
+        .map(|(idx, _)| idx)
+        .collect();
 
     let mut providers: HashMap<String, Vec<usize>> = HashMap::new();
     let mut unknown_requires: HashMap<String, Vec<String>> = HashMap::new();
 
     fill_providers(&steps, &mut providers)?;
-    add_dependencies(&mut steps, &mut providers, &mut unknown_requires)?;
+    add_dependencies(
+        &mut steps,
+        &completed_steps_idx,
+        &mut providers,
+        &mut unknown_requires,
+        os_info,
+    )?;
     check_for_errors(&unknown_requires)?;
 
     let mut graph: utils::graph::Graph<usize> = utils::graph::Graph::new();
@@ -106,16 +118,19 @@ fn fill_providers(
     Ok(())
 }
 
+// to add dependencies of matched filters steps
 fn add_dependencies(
     steps: &mut [Step],
+    completed_steps_idx: &HashSet<usize>,
     providers: &mut HashMap<String, Vec<usize>>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
+    os_info: &OsInfo,
 ) -> anyhow::Result<()> {
     let mut stack: Vec<usize> = Vec::new();
     let mut checked: HashSet<usize> = HashSet::new();
 
-    for step in steps.iter() {
-        // matched steps are added before skipped
+    for step in steps.iter_mut() {
+        // we need only matched steps, and they are added before skipped - can safely break
         if step.selection_reason != Some(StepSelectionReason::MatchedFilter) {
             break;
         }
@@ -124,9 +139,18 @@ fn add_dependencies(
             continue;
         }
 
-        push_step_dependencies(step, providers, unknown_requires, &mut stack, &mut checked)?;
+        push_step_dependencies(
+            step,
+            completed_steps_idx,
+            providers,
+            unknown_requires,
+            &mut stack,
+            &mut checked,
+            os_info,
+        )?;
     }
 
+    // iteratively add dependencies of added dependencies
     while let Some(step_idx) = stack.pop() {
         if steps[step_idx].selection_reason.is_none() {
             steps[step_idx].selection_reason = Some(StepSelectionReason::Dependency);
@@ -134,23 +158,41 @@ fn add_dependencies(
         }
 
         push_step_dependencies(
-            &steps[step_idx],
+            &mut steps[step_idx],
+            completed_steps_idx,
             providers,
             unknown_requires,
             &mut stack,
             &mut checked,
+            os_info,
         )?;
     }
     Ok(())
 }
 
 fn push_step_dependencies(
-    step: &Step,
+    step: &mut Step,
+    completed_steps_idx: &HashSet<usize>,
     providers: &HashMap<String, Vec<usize>>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
     stack: &mut Vec<usize>,
     checked: &mut HashSet<usize>,
+    os_info: &OsInfo,
 ) -> anyhow::Result<()> {
+    // requires whose provider was already handled in a previous run are considered satisfied
+    step.requires.retain(|r| match providers.get(&r.id) {
+        Some(indexes) => {
+            if indexes.len() == 1 {
+                !completed_steps_idx.contains(&indexes[0])
+            } else {
+                true
+            }
+        }
+        None => true,
+    });
+
+    // the current step is guaranteed to be executed, so we can filter its requires (possible os / when script checks).
+    filter_requires(step, os_info)?;
     for require in &step.requires {
         if let Some(provider_steps) = providers.get(&require.id) {
             if provider_steps.len() > 1 {
@@ -176,42 +218,40 @@ fn push_step_dependencies(
     Ok(())
 }
 
-fn filter_requires(steps: &mut [Step], os_info: &OsInfo) -> anyhow::Result<()> {
-    for step in steps {
-        let mut filtered_required: Vec<Require> = Vec::new();
+fn filter_requires(step: &mut Step, os_info: &OsInfo) -> anyhow::Result<()> {
+    let mut filtered_required: Vec<Require> = Vec::new();
 
-        for require in &step.requires {
-            if let Some(os_expr) = &require.os
-                && !eval_os_expr(os_expr, os_info)
-            {
-                continue;
-            }
-
-            if require.when_script.is_some() {
-                check_step_env(step)?;
-                let script =
-                    runner::Script::from(require.when_script.as_ref().unwrap(), &step.defaults);
-                let run = run_noninteractive_script(
-                    &script,
-                    Path::new(&step.source_file).parent().unwrap(),
-                    None,
-                )
-                .context(format!(
-                    "failed to run require '{}' when-script for step '{}'",
-                    require.id, step.id
-                ))?;
-
-                match run.status {
-                    ScriptStatus::Success => {}
-                    ScriptStatus::Failed(_) => continue,
-                }
-            }
-
-            filtered_required.push(require.clone());
+    for require in &step.requires {
+        if let Some(os_expr) = &require.os
+            && !eval_os_expr(os_expr, os_info)
+        {
+            continue;
         }
 
-        step.requires = filtered_required;
+        if require.when_script.is_some() {
+            check_step_env(step)?;
+            let script =
+                runner::Script::from(require.when_script.as_ref().unwrap(), &step.defaults);
+            let run = run_noninteractive_script(
+                &script,
+                Path::new(&step.source_file).parent().unwrap(),
+                None,
+            )
+            .context(format!(
+                "failed to run require '{}' when-script for step '{}'",
+                require.id, step.id
+            ))?;
+
+            match run.status {
+                ScriptStatus::Success => {}
+                ScriptStatus::Failed(_) => continue,
+            }
+        }
+
+        filtered_required.push(require.clone());
     }
+
+    step.requires = filtered_required;
     Ok(())
 }
 
@@ -235,7 +275,9 @@ fn check_for_errors(unknown_requires: &HashMap<String, Vec<String>>) -> anyhow::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::utils::filters::StepFilter::{ByOs, ByStartId, ByTags, ByWhenScript};
+    use crate::commands::utils::filters::StepFilter::{
+        ByIds, ByOs, ByPreviousRunState, ByTags, ByWhenScript,
+    };
     use crate::commands::utils::filters::{AllFiltersResult, StepFilter};
     use crate::config::expr::Expr;
     use crate::config::{Require, Script, Step, StepSelectionReason};
@@ -327,7 +369,11 @@ mod tests {
         let step4 = make_step("step4", vec![], vec![]);
         let filter_res = make_filters_result(
             vec![&step1],
-            vec![(ByTags, &step2), (ByOs, &step3), (ByStartId, &step4)],
+            vec![
+                (ByTags, &step2),
+                (ByOs, &step3),
+                (ByPreviousRunState, &step4),
+            ],
         );
 
         let result = toposort_steps(&filter_res, &make_os_info()).unwrap();
@@ -386,13 +432,12 @@ mod tests {
     }
 
     #[test]
-    //3 depends on 2, 2 depends on 1. 1 and 2 was excluded by filters
+    //3 depends on 2, 2 depends on 1. 1 and 2 was excluded by non-strict filters
     fn test_linear_dependency_with_excluded_steps() {
         let step3 = make_step("step3", vec!["step2_completed"], vec![]);
         let step2 = make_step("step2", vec!["step1_completed"], vec!["step2_completed"]);
         let step1 = make_step("step1", vec![], vec!["step1_completed"]);
-        let filter_res =
-            make_filters_result(vec![&step3], vec![(ByTags, &step1), (ByStartId, &step2)]);
+        let filter_res = make_filters_result(vec![&step3], vec![(ByTags, &step1), (ByIds, &step2)]);
 
         let result = toposort_steps(&filter_res, &make_os_info()).unwrap();
 
@@ -432,8 +477,7 @@ mod tests {
         let step2 = make_step("step2", vec!["step1_completed"], vec!["step2_completed"]);
         let mut step1 = make_step("step1", vec![], vec!["step1_completed"]);
         step1.os = Some(Expr::Var("windows".to_string()));
-        let filter_res =
-            make_filters_result(vec![&step3], vec![(ByOs, &step1), (ByStartId, &step2)]);
+        let filter_res = make_filters_result(vec![&step3], vec![(ByOs, &step1), (ByTags, &step2)]);
 
         let result = toposort_steps(&filter_res, &make_os_info());
         assert!(result.is_err());
@@ -447,15 +491,13 @@ mod tests {
     }
 
     #[test]
-    //3 depends on 2, 2 depends on 1. 1 was excluded by os filter
+    //3 depends on 2, 2 depends on 1. 1 was excluded by when filter
     fn test_linear_dependency_with_excluded_by_when_script_step() {
         let step3 = make_step("step3", vec!["step2_completed"], vec![]);
         let step2 = make_step("step2", vec!["step1_completed"], vec!["step2_completed"]);
         let step1 = make_step("step1", vec![], vec!["step1_completed"]);
-        let filter_res = make_filters_result(
-            vec![&step3],
-            vec![(ByWhenScript, &step1), (ByStartId, &step2)],
-        );
+        let filter_res =
+            make_filters_result(vec![&step3], vec![(ByWhenScript, &step1), (ByTags, &step2)]);
 
         let result = toposort_steps(&filter_res, &make_os_info());
         assert!(result.is_err());

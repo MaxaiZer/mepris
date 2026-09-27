@@ -15,17 +15,22 @@ use std::{
 pub struct RunStateSaver {
     pub file: String,
     pub tags_expr: Option<String>,
-    pub steps: Vec<String>,
+    pub selected_steps: Vec<String>,
+    pub previously_handled_steps: HashSet<String>,
 }
 
 impl runner::StateSaver for RunStateSaver {
     fn save(&self, state: &RunState) -> anyhow::Result<()> {
+        let mut handled_steps = self.previously_handled_steps.clone();
+        handled_steps.extend(state.handled_steps.clone());
+
         state::save(&RunInfo {
             file: self.file.clone(),
             tags_expr: self.tags_expr.clone(),
-            steps: self.steps.clone(),
+            selected_steps: self.selected_steps.clone(),
             interactive: state.interactive,
-            last_step_id: state.last_step_id.clone(),
+            completed: state.completed,
+            handled_steps,
         })
     }
 }
@@ -34,9 +39,10 @@ impl runner::StateSaver for RunStateSaver {
 pub struct RunInfo {
     pub file: String,
     pub tags_expr: Option<String>,
-    pub steps: Vec<String>,
+    pub selected_steps: Vec<String>,
     pub interactive: bool,
-    pub last_step_id: Option<String>,
+    pub handled_steps: HashSet<String>,
+    pub completed: bool,
 }
 
 pub fn load_env(config_file_path: &str) -> Result<()> {

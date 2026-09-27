@@ -37,7 +37,8 @@ pub struct RunParameters {
 }
 
 pub struct RunState {
-    pub last_step_id: Option<String>,
+    pub completed: bool,
+    pub handled_steps: Vec<String>,
     pub interactive: bool,
 }
 
@@ -224,9 +225,10 @@ pub fn run(
         return dry::run(&steps).map(Some);
     }
 
+    let total_steps = steps.len();
     let mut interactive = interactor.is_some();
     let mut execution_results: HashMap<String, ExecutionResult> = HashMap::new();
-    let total_steps = steps.len();
+    let mut handled_steps = Vec::<String>::new();
 
     for (i, step) in steps.iter_mut().enumerate() {
         let _span = info_span!(
@@ -244,7 +246,8 @@ pub fn run(
 
         if state_saver
             .save(&RunState {
-                last_step_id: Some(step.id.clone()),
+                completed: false,
+                handled_steps: handled_steps.clone(),
                 interactive,
             })
             .is_err()
@@ -262,6 +265,7 @@ pub fn run(
                     } else {
                         execution_results.insert(step.id.clone(), ExecutionResult::Skipped);
                     }
+                    handled_steps.push(step.id.clone());
                     continue;
                 }
                 Decision::Abort => return Ok(None),
@@ -269,6 +273,7 @@ pub fn run(
             }
         } else if completion == StepCompletedResult::Completed {
             info!(event_type = %EventType::CompletedStepSkipped.as_str());
+            handled_steps.push(step.id.clone());
             continue;
         }
 
@@ -283,11 +288,13 @@ pub fn run(
         } else {
             execution_results.insert(step.id.clone(), ExecutionResult::Completed);
         }
+        handled_steps.push(step.id.clone());
     }
 
     if state_saver
         .save(&RunState {
-            last_step_id: None,
+            completed: true,
+            handled_steps: handled_steps.clone(),
             interactive,
         })
         .is_err()
@@ -517,7 +524,7 @@ mod tests {
 
         let err = res.err().unwrap();
         let messages: Vec<String> = err.chain().map(|e| e.to_string()).collect();
-        
+
         assert!(
             messages.contains(&"failed to run check-script: status code 1".to_string()),
             "unexpected output: {}",

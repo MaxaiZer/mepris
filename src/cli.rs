@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{Args, Parser, Subcommand};
+use std::collections::HashSet;
 
 #[derive(Parser)]
 #[command(name = "mepris")]
@@ -56,8 +57,6 @@ pub struct RunArgs {
     pub tags_expr: Option<String>,
     #[arg(short, long = "step", help = "Run only specific steps by their IDs")]
     pub steps: Vec<String>,
-    #[arg(skip)]
-    pub start_step_id: Option<String>,
     #[arg(
         short,
         long,
@@ -81,6 +80,8 @@ pub struct RunArgs {
         help = "Enable debug output (shows script execution time, exit codes, etc.)"
     )]
     pub debug: bool,
+    #[arg(skip)]
+    pub previously_handled_steps: HashSet<String>,
 }
 
 #[derive(Args)]

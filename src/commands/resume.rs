@@ -14,7 +14,7 @@ pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
             return Ok(());
         }
     };
-    if state.last_step_id.is_none() {
+    if state.completed {
         writeln!(out, "Nothing to resume: last run was successful")?;
         return Ok(());
     }
@@ -25,8 +25,8 @@ pub fn handle(args: ResumeArgs, out: &mut impl Write) -> Result<()> {
         RunArgs {
             file: state.file,
             tags_expr: state.tags_expr,
-            steps: state.steps,
-            start_step_id: state.last_step_id,
+            steps: state.selected_steps,
+            previously_handled_steps: state.handled_steps,
             interactive,
             dry_run: args.dry_run,
             show_skipped: args.show_skipped,

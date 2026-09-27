@@ -1,5 +1,7 @@
 use super::utils::{RunStateSaver, check_env, load_env};
-use crate::commands::utils::filters::StepFilter::{ByIds, ByOs, ByStartId, ByTags, ByWhenScript};
+use crate::commands::utils::filters::StepFilter::{
+    ByIds, ByOs, ByPreviousRunState, ByTags, ByWhenScript,
+};
 use crate::commands::utils::filters::{
     ExcludedStep, ExcludedStepVecExt, FilterConfig, StepFilter, filter_steps,
 };
@@ -28,12 +30,17 @@ impl From<&RunArgs> for FilterConfig {
         let mut conf = FilterConfig::new()
             .apply_when()
             .apply_os(OS_INFO.clone())
-            .apply_ids(args.steps.clone());
+            .apply_ids(args.steps.clone())
+            .apply_previously_run_ids(
+                args.previously_handled_steps
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<String>>()
+                    .clone(),
+            );
+
         if let Some(tags_expr) = args.tags_expr.as_ref() {
             conf = conf.apply_tags(tags_expr.clone());
-        }
-        if let Some(start_step_id) = args.start_step_id.as_ref() {
-            conf = conf.apply_start_step(start_step_id.clone());
         }
         conf
     }
@@ -46,7 +53,8 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
             .unwrap()
             .to_string(),
         tags_expr: args.tags_expr.clone(),
-        steps: args.steps.clone(),
+        selected_steps: args.steps.clone(),
+        previously_handled_steps: args.previously_handled_steps.clone(),
     };
     let mut script_checker = DefaultScriptChecker::new();
     let interactor: Option<&mut dyn Interactor> = if args.interactive {
@@ -90,7 +98,7 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
     if args.dry_run
         && let Some(dry_run_plan) = dry_run_plan
     {
-        // excluded steps may be pulled in as dependencies after toposort and should not be shown as skipped
+        // excluded steps (depends on filter) may be pulled in as dependencies after toposort and should not be shown as skipped
         let steps_to_run_ids = steps
             .iter()
             .map(|s| s.id.clone())
@@ -101,12 +109,13 @@ pub fn handle(args: RunArgs, out: &mut impl Write) -> Result<()> {
             .filter(|s| !steps_to_run_ids.contains(&s.step.id))
             .cloned()
             .collect::<Vec<&ExcludedStep>>();
-        print_info(&excluded_steps, &dry_run_plan, args.show_skipped, out)?;
+
+        print_dry_run_info(&excluded_steps, &dry_run_plan, args.show_skipped, out)?;
     }
     Ok(())
 }
 
-fn print_info(
+fn print_dry_run_info(
     excluded_steps: &[&ExcludedStep],
     dry_run_plan: &dry::RunPlan,
     show_skipped: bool,
@@ -269,11 +278,24 @@ fn print_excluded<'a>(
     has_steps_to_run: bool,
     out: &mut impl Write,
 ) -> Result<()> {
-    let excluded_steps = excluded_steps.not_excluded_by(ByIds);
+    let excluded_steps: Vec<&ExcludedStep> = excluded_steps
+        .iter()
+        .filter(|step| {
+            !step.failed_filters.contains(&ByIds)
+                || step.failed_filters.contains(&ByPreviousRunState)
+        })
+        .copied()
+        .collect();
     if !excluded_steps.is_empty() && has_steps_to_run {
         writeln!(out)?;
     }
 
+    let excluded_steps = print_excluded_by_filter(
+        &excluded_steps,
+        ByPreviousRunState,
+        "⏭️ Skipped steps: already completed in previous run",
+        out,
+    )?;
     let excluded_steps = print_excluded_by_filter(
         &excluded_steps,
         ByTags,
@@ -286,16 +308,10 @@ fn print_excluded<'a>(
         "⏭️ Skipped steps due to OS mismatch",
         out,
     )?;
-    let excluded_steps = print_excluded_by_filter(
+    let _ = print_excluded_by_filter(
         &excluded_steps,
         ByWhenScript,
         "⏭️ Skipped steps due to failed when-script",
-        out,
-    )?;
-    _ = print_excluded_by_filter(
-        &excluded_steps,
-        ByStartId,
-        "⏭️ Skipped steps due to resume",
         out,
     )?;
     Ok(())
@@ -422,7 +438,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -469,7 +485,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -516,7 +532,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -526,57 +542,6 @@ mod tests {
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("⏭️ Skipped steps due to failed when-script: step1, step2"));
-    }
-
-    #[test]
-    fn test_print_info_with_start_id_exclusion() {
-        let mut output = Cursor::new(Vec::new());
-        let steps = [
-            Step {
-                id: "step1".to_string(),
-                ..Default::default()
-            },
-            Step {
-                id: "step2".to_string(),
-                ..Default::default()
-            },
-            Step {
-                id: "step3".to_string(),
-                ..Default::default()
-            },
-        ];
-        let os_info = create_os_info();
-
-        let filter_res = filter_steps(
-            &steps,
-            &FilterConfig::new()
-                .apply_os(os_info)
-                .apply_when()
-                .apply_start_step("step3".to_string()),
-        )
-        .unwrap();
-        let dry_run_plan = RunPlan {
-            steps_to_run: vec![create_step_run(
-                "step3",
-                StepCompletedResult::HasScriptWithoutCheck,
-                StepSelectionReason::MatchedFilter,
-            )],
-        };
-
-        print_info(
-            &filter_res.excluded_steps(),
-            &dry_run_plan,
-            true,
-            &mut output,
-        )
-        .unwrap();
-
-        let output_str = String::from_utf8(output.into_inner()).unwrap();
-        assert!(
-            output_str.contains("⏭️ Skipped steps due to resume: step1, step2"),
-            "unexpected output: \n{}",
-            output_str
-        );
     }
 
     #[test]
@@ -617,7 +582,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -685,7 +650,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -754,7 +719,7 @@ mod tests {
                 .apply_os(os_info)
                 .apply_when()
                 .apply_tags("tag".to_string())
-                .apply_start_step("step5".to_string()),
+                .apply_previously_run_ids(vec!["step1".to_string()]),
         )
         .unwrap();
         let dry_run_plan = RunPlan {
@@ -765,7 +730,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -790,7 +755,7 @@ mod tests {
             output_str
         );
         assert!(
-            output_str.contains("⏭️ Skipped steps due to resume: step1"),
+            output_str.contains("⏭️ Skipped steps: already completed in previous run: step1"),
             "unexpected output: \n{}",
             output_str
         );
@@ -831,7 +796,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -849,6 +814,107 @@ mod tests {
             !output_str.contains("step2"),
             "unexpected output: \n{}",
             output_str
+        );
+    }
+
+    #[test]
+    fn test_print_info_previously_completed_step_pulled_in_by_selection() {
+        let mut output = Cursor::new(Vec::new());
+        let steps = [
+            Step {
+                id: "step1".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "step3".to_string(),
+                ..Default::default()
+            },
+        ];
+        let os_info = create_os_info();
+
+        let filter_res = filter_steps(
+            &steps,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_ids(vec!["step3".to_string()])
+                .apply_previously_run_ids(vec!["step1".to_string()]),
+        )
+        .unwrap();
+        let dry_run_plan = RunPlan {
+            steps_to_run: vec![create_step_run(
+                "step3",
+                StepCompletedResult::HasScriptWithoutCheck,
+                StepSelectionReason::MatchedFilter,
+            )],
+        };
+
+        print_dry_run_info(
+            &filter_res.excluded_steps(),
+            &dry_run_plan,
+            true,
+            &mut output,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output.into_inner()).unwrap();
+        assert!(
+            output_str.contains("⏭️ Skipped steps: already completed in previous run: step1"),
+            "unexpected output: \n{}",
+            output_str
+        );
+    }
+
+    #[test]
+    fn test_print_info_previously_completed_step_takes_priority_over_tag_mismatch() {
+        let mut output = Cursor::new(Vec::new());
+        let steps = [
+            Step {
+                id: "step1".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "step2".to_string(),
+                tags: vec!["tag".to_string()],
+                ..Default::default()
+            },
+        ];
+        let os_info = create_os_info();
+
+        let filter_res = filter_steps(
+            &steps,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_tags("tag".to_string())
+                .apply_previously_run_ids(vec!["step1".to_string()]),
+        )
+        .unwrap();
+        let dry_run_plan = RunPlan {
+            steps_to_run: vec![create_step_run(
+                "step2",
+                StepCompletedResult::HasScriptWithoutCheck,
+                StepSelectionReason::MatchedFilter,
+            )],
+        };
+
+        print_dry_run_info(
+            &filter_res.excluded_steps(),
+            &dry_run_plan,
+            true,
+            &mut output,
+        )
+        .unwrap();
+
+        let output_str = String::from_utf8(output.into_inner()).unwrap();
+        assert!(
+            output_str.contains("⏭️ Skipped steps: already completed in previous run: step1"),
+            "unexpected output: \n{}",
+            output_str
+        );
+        assert!(
+            !output_str.contains("tag mismatch"),
+            "already-completed 'step1' must not be reported as tag-mismatched. Output was:\n{output_str}"
         );
     }
 
@@ -871,7 +937,7 @@ mod tests {
             )],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -903,7 +969,7 @@ mod tests {
             steps_to_run: vec![],
         };
 
-        print_info(
+        print_dry_run_info(
             &filter_res.excluded_steps(),
             &dry_run_plan,
             true,
@@ -943,7 +1009,7 @@ mod tests {
             ],
         };
 
-        print_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
+        print_dry_run_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("[PULLED DEPENDENCIES]"));
@@ -973,7 +1039,7 @@ mod tests {
             ],
         };
 
-        print_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
+        print_dry_run_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(output_str.contains("dependency of step2"));
@@ -992,7 +1058,7 @@ mod tests {
             )],
         };
 
-        print_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
+        print_dry_run_info(&excluded_steps, &dry_run_plan, true, &mut output).unwrap();
 
         let clean = strip_ansi_escapes::strip(output.into_inner());
         let output_str = String::from_utf8(clean).unwrap();
@@ -1017,7 +1083,7 @@ mod tests {
             steps_to_run: vec![step_run],
         };
 
-        print_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
+        print_dry_run_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
 
         let clean = strip_ansi_escapes::strip(output.into_inner());
         let output_str = String::from_utf8(clean).unwrap();
@@ -1057,7 +1123,7 @@ mod tests {
             steps_to_run: vec![step_run],
         };
 
-        print_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
+        print_dry_run_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
 
         let clean = strip_ansi_escapes::strip(output.into_inner());
         let output_str = String::from_utf8(clean).unwrap();
@@ -1097,7 +1163,7 @@ mod tests {
             steps_to_run: vec![step_run],
         };
 
-        print_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
+        print_dry_run_info(&excluded_steps_ref, &dry_run_plan, true, &mut output).unwrap();
 
         let output_str = String::from_utf8(output.into_inner()).unwrap();
         assert!(

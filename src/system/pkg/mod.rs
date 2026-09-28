@@ -78,6 +78,7 @@ pub enum PackageManager {
     Winget,
     Cargo,
     Npm,
+    Uv,
 }
 
 impl PackageManager {
@@ -96,11 +97,24 @@ impl PackageManager {
             Self::Choco => which("choco").is_ok(),
             Self::Cargo => which("cargo").is_ok(),
             Self::Npm => which("npm").is_ok(),
+            Self::Uv => which("uv").is_ok(),
         }
     }
 
     fn requires_cache(&self) -> bool {
         parse_packages_list_func(self).is_ok()
+    }
+
+    fn normalized_package_name(&self, pkg: &str) -> String {
+        if *self == Self::Uv {
+            const SPEC_STARTERS: [char; 7] = ['[', '@', '=', '~', '>', '<', '!'];
+            let end = pkg
+                .find(|c| SPEC_STARTERS.contains(&c))
+                .unwrap_or(pkg.len());
+            return pkg[..end].trim().to_string();
+        }
+
+        pkg.to_string()
     }
 
     pub fn install(&self, pkgs: &[String]) -> anyhow::Result<()> {
@@ -166,6 +180,17 @@ impl PackageManager {
                 })
                 .collect(),
 
+            Self::Uv => pkgs
+                .iter()
+                .map(|pkg| CommandSpec {
+                    bin: "uv".into(),
+                    args: vec!["tool", "install", pkg]
+                        .into_iter()
+                        .map(String::from)
+                        .collect(),
+                })
+                .collect(),
+
             Self::Apt => vec![build_cmd("sudo", &["apt-get", "install", "-y"], pkgs)],
             Self::Dnf => vec![build_cmd("sudo", &["dnf", "install", "-y"], pkgs)],
             Self::Pacman => vec![build_cmd(
@@ -211,7 +236,7 @@ impl PackageManager {
                 let mut cache = cache.borrow_mut();
                 if let Some(entry) = cache.get_mut(&cache_id) {
                     pkgs.iter().for_each(|pkg| {
-                        entry.insert(pkg.clone());
+                        entry.insert(self.normalized_package_name(pkg));
                     });
                 }
             });
@@ -288,6 +313,10 @@ impl PackageManager {
                     "----parseable".to_string(),
                 ],
             },
+            Self::Uv => CommandSpec {
+                bin: "uv".to_string(),
+                args: vec!["tool".to_string(), "list".to_string()],
+            },
         };
 
         if self.requires_cache() {
@@ -317,6 +346,7 @@ impl PackageManager {
                 .any(|line| line.starts_with(pkg) && line.contains(" v"))),
 
             PackageManager::Npm
+            | PackageManager::Uv
             | PackageManager::Scoop
             | PackageManager::Choco
             | PackageManager::Winget => {
@@ -346,12 +376,12 @@ fn run_cacheable_is_installed(
                 let res = run_command(cmd).unwrap();
                 String::from_utf8_lossy(&res.stdout).to_string()
             };
-            
+
             debug!(event_type=%EventType::CachePopulationCompleted);
             parse(output).unwrap()
         });
 
-        packages.contains(pkg)
+        packages.contains(&manager.normalized_package_name(pkg))
     });
 
     Ok(res)
@@ -389,4 +419,40 @@ fn run_win_command_with_file_output(cmd: &CommandSpec) -> anyhow::Result<String>
 
     let file = fs::read_to_string(path).context("failed to read temp file")?;
     Ok(file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uv_normalized_package_name_strips_specs() {
+        assert_eq!(
+            PackageManager::Uv.normalized_package_name("hound-mcp[all]"),
+            "hound-mcp"
+        );
+        assert_eq!(
+            PackageManager::Uv.normalized_package_name("foo @ https://example.com/foo.whl"),
+            "foo"
+        );
+        assert_eq!(
+            PackageManager::Uv.normalized_package_name("bar==1.0"),
+            "bar"
+        );
+        assert_eq!(PackageManager::Uv.normalized_package_name("baz~=2"), "baz");
+        assert_eq!(PackageManager::Uv.normalized_package_name("qux!=1"), "qux");
+        assert_eq!(PackageManager::Uv.normalized_package_name("ruff"), "ruff");
+    }
+
+    #[test]
+    fn test_normalized_package_name_identity_for_other_managers() {
+        assert_eq!(
+            PackageManager::Npm.normalized_package_name("@angular/cli"),
+            "@angular/cli"
+        );
+        assert_eq!(
+            PackageManager::Cargo.normalized_package_name("ripgrep"),
+            "ripgrep"
+        );
+    }
 }

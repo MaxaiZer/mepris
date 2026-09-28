@@ -8,7 +8,7 @@ sidebar_position: 1
 ## Overview
 
 Mepris features:
-- **Package Manager Support**: apt, dnf, pacman, flatpak, snap, zypper, brew, scoop, choco, winget, cargo, npm, and AUR
+- **Package Manager Support**: apt, dnf, pacman, flatpak, snap, zypper, brew, scoop, choco, winget, cargo, npm, uv, and AUR
 - **Conditional Execution**: Run steps based on OS and custom conditions
 - **Modular Configs**: Split your configuration into multiple files
 - **Package Aliases**: Define package name mappings for different package managers

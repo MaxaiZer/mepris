@@ -1,0 +1,5 @@
+black v26.5.1
+- black
+- blackd
+ruff v0.16.9
+- ruff

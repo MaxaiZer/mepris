@@ -11,6 +11,7 @@ pub fn parse_packages_list_func(manager: &PackageManager) -> anyhow::Result<Pars
         PackageManager::Choco => Ok(CHOCO_PARSE_PACKAGES_LIST),
         PackageManager::Winget => Ok(WINGET_PARSE_PACKAGES_LIST),
         PackageManager::Npm => Ok(NPM_PARSE_PACKAGES_LIST),
+        PackageManager::Uv => Ok(UV_PARSE_PACKAGES_LIST),
         _ => bail!("unsupported package manager"),
     }
 }
@@ -74,6 +75,20 @@ const NPM_PARSE_PACKAGES_LIST: fn(String) -> anyhow::Result<HashSet<String>> = |
     Ok(ids)
 };
 
+const UV_PARSE_PACKAGES_LIST: fn(String) -> anyhow::Result<HashSet<String>> = |output| {
+    let mut ids = HashSet::new();
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('-') {
+            continue;
+        }
+        if let Some((name, _)) = line.split_once(" v") {
+            ids.insert(name.to_string());
+        }
+    }
+    Ok(ids)
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +123,14 @@ mod tests {
         assert!(res.contains("opencode-ai"));
         assert!(res.contains("yaml-language-server"));
         assert!(res.contains("@angular/cli"));
+    }
+
+    #[test]
+    fn test_uv_parse() {
+        let output = include_str!("../../../tests/fixtures/uv.txt");
+        let res = UV_PARSE_PACKAGES_LIST(output.to_string()).unwrap();
+        assert!(res.contains("black"));
+        assert!(res.contains("ruff"));
+        assert_eq!(res.len(), 2);
     }
 }

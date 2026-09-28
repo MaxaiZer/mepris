@@ -14,9 +14,9 @@ pub fn parse_os_expr<'de, D>(deserializer: D) -> Result<Option<Expr>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Option<&str> = Option::deserialize(deserializer)?;
+    let s: Option<String> = Option::deserialize(deserializer)?;
     match s {
-        Some(inner) => parse(inner).map(Some).map_err(|e| {
+        Some(inner) => parse(&inner).map(Some).map_err(|e| {
             serde::de::Error::custom(format!("Failed to parse OS expr '{inner}': {e}"))
         }),
         None => Ok(None),

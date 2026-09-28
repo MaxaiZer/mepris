@@ -86,6 +86,8 @@ fn normalize_steps(steps: &mut Vec<Step>) {
 #[cfg(test)]
 mod tests {
     use crate::config::PackageManager;
+    use crate::config::expr::os::os_expr_possible_platforms;
+    use crate::system::os_info::Platform;
 
     use super::*;
     use crate::system::shell::Shell;
@@ -333,5 +335,68 @@ mod tests {
         assert_eq!(steps[0].provides[1], "pkg2");
         assert_eq!(steps[0].provides[2], "pkg3");
         assert_eq!(steps[0].provides[3], "pkg4");
+    }
+
+    #[test]
+    fn test_parse_step_os() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let parent_path = dir.path().join("file.yaml");
+
+        fs::write(
+            &parent_path,
+            r#"
+            steps:
+              - id: win-step
+                os: windows
+            "#,
+        )
+            .expect("Failed to write file.yaml");
+
+        let steps = parse(parent_path.to_str().unwrap()).expect("Failed to parse YAML");
+
+        assert_eq!(steps.len(), 1);
+        assert!(steps[0].os.is_some());
+        let mut expected = HashSet::new();
+        expected.insert(Platform::Windows);
+        assert_eq!(
+            os_expr_possible_platforms(steps[0].os.as_ref().unwrap()),
+            expected
+        );
+    }
+    
+    #[test]
+    fn test_parse_require_with_os() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let parent_path = dir.path().join("file.yaml");
+
+        fs::write(
+            &parent_path,
+            r#"
+            steps:
+              - id: neovim
+                requires:
+                  - carapace
+                  - id: linux-helpers
+                    os: linux
+            "#,
+        )
+        .expect("Failed to write file.yaml");
+
+        let steps = parse(parent_path.to_str().unwrap()).expect("Failed to parse YAML");
+
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].requires.len(), 2);
+
+        assert_eq!(steps[0].requires[0].id, "carapace");
+        assert!(steps[0].requires[0].os.is_none());
+
+        let with_os = &steps[0].requires[1];
+        assert_eq!(with_os.id, "linux-helpers");
+        let mut expected = HashSet::new();
+        expected.insert(Platform::Linux);
+        assert_eq!(
+            os_expr_possible_platforms(with_os.os.as_ref().unwrap()),
+            expected
+        );
     }
 }

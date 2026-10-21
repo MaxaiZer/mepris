@@ -41,6 +41,8 @@ Each step supports the following **optional** fields:
 - `packages`: List of packages to install via the system or overridden package manager. Can use [Package aliases](package-aliases.md)
 - `script`: The main shell script to execute.
 - `check`: A verification script used to determine whether the step is completed. (see [Step completion](dependencies.md#step-completion))
+- `extends`: Inherit the script fields from another step by id (see [Step templates](step-templates.md)).
+- `with`: Environment variable values passed to the referenced step via `extends` (see [Step templates](step-templates.md)).
 
 ### Scripts
 

@@ -223,7 +223,12 @@ pub fn filter_by_when_script<'a>(steps: &[&'a Step]) -> anyhow::Result<FilterRes
 
         let _span = debug_span!("when-script check", step_id = s.id).entered();
 
-        let script = runner::Script::from(s.when_script.as_ref().unwrap(), &s.defaults);
+        let script = runner::Script::from_step(
+            s.when_script.as_ref().unwrap(),
+            &s.defaults,
+            &s.id,
+            &s.with,
+        )?;
         let run =
             run_noninteractive_script(&script, Path::new(&s.source_file).parent().unwrap(), None)
                 .context(format!("failed to run when-script for step '{}'", s.id))?;

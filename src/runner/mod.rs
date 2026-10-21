@@ -83,15 +83,18 @@ pub struct Step {
 }
 
 impl Step {
-    pub fn from(config_step: &config::Step, aliases: &PackageAliases) -> Self {
-        let resolve_script = |script: &Option<config::Script>| -> Option<Script> {
-            if script.is_none() {
-                return None;
+    pub fn from(config_step: &config::Step, aliases: &PackageAliases) -> Result<Self> {
+        let resolve_script = |script: &Option<config::Script>| -> Result<Option<Script>> {
+            if let Some(s) = script {
+                Ok(Some(Script::from_step(
+                    s,
+                    &config_step.defaults,
+                    &config_step.id,
+                    &config_step.with,
+                )?))
+            } else {
+                Ok(None)
             }
-            Some(Script::from(
-                script.as_ref().unwrap(),
-                &config_step.defaults,
-            ))
         };
 
         let pkg_manager = resolve_step_package_manager(config_step);
@@ -106,13 +109,13 @@ impl Step {
             packages.push(resolved_pkg);
         }
 
-        Step {
+        Ok(Step {
             id: config_step.id.clone(),
             package_manager: pkg_manager,
             packages,
-            pre_script: resolve_script(&config_step.pre_script),
-            script: resolve_script(&config_step.script),
-            check_script: resolve_script(&config_step.check_script),
+            pre_script: resolve_script(&config_step.pre_script)?,
+            script: resolve_script(&config_step.script)?,
+            check_script: resolve_script(&config_step.check_script)?,
             source_file: config_step.source_file.clone(),
             selection_reason: config_step
                 .selection_reason
@@ -124,7 +127,7 @@ impl Step {
                 .unwrap(),
             dependencies: config_step.dependencies.clone(),
             dependency_of: config_step.dependency_of.clone(),
-        }
+        })
     }
 
     pub fn all_used_shells(&self) -> HashSet<Shell> {
@@ -218,7 +221,10 @@ pub fn run(
     out: &mut impl Write,
 ) -> Result<Option<dry::RunPlan>> {
     let aliases = load_aliases(params.source_file_path.parent().unwrap())?;
-    let mut steps: Vec<Step> = steps.iter().map(|s| Step::from(s, &aliases)).collect();
+    let mut steps: Vec<Step> = steps
+        .iter()
+        .map(|s| Step::from(s, &aliases))
+        .collect::<Result<Vec<_>>>()?;
 
     let _span = info_span!("run").entered();
     if params.dry_run {
@@ -654,6 +660,7 @@ mod tests {
         let script = Script {
             shell: Shell::Bash,
             code: "echo \"what\"".to_string(),
+            env_values: std::collections::BTreeMap::new(),
         };
 
         run_script(
@@ -691,6 +698,7 @@ mod tests {
             check_script: Some(Script {
                 shell: Shell::Bash,
                 code: format!("exit {exit_code}"),
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Apt,
@@ -714,6 +722,7 @@ mod tests {
             pre_script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             package_manager: PackageManager::Apt,
@@ -741,6 +750,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             ..Default::default()
         };
@@ -765,6 +775,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             ..Default::default()
         };

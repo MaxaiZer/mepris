@@ -139,6 +139,7 @@ fn check_step_script(
         let runner_script = runner::Script {
             shell,
             code: script.code.clone(),
+            env_values: std::collections::BTreeMap::new(),
         };
 
         if !is_shell_available(&runner_script.shell)
@@ -169,11 +170,11 @@ fn check_step_script(
 
 #[cfg(test)]
 mod tests {
-    use serial_test::serial;
+    use super::*;
     use crate::config::Defaults;
     use crate::config::expr::parse;
     use crate::system::shell::mock_available_shells;
-    use super::*;
+    use serial_test::serial;
 
     #[derive(Default)]
     struct MockChecker {
@@ -218,7 +219,8 @@ mod tests {
             &mut checked,
             &mut unavailable,
             &mut checker,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(checked, 0);
         assert_eq!(checker.calls, 0);
@@ -251,7 +253,8 @@ mod tests {
             &mut checked,
             &mut unavailable,
             &mut checker,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(checked, 1);
         assert_eq!(checker.calls, 1);
@@ -291,7 +294,8 @@ mod tests {
             &mut checked,
             &mut unavailable,
             &mut checker,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(checked >= 1);
         assert!(!unavailable.is_empty());

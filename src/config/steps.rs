@@ -5,6 +5,7 @@ use crate::system::shell::Shell;
 use serde::de::IntoDeserializer;
 use serde::de::value::StringDeserializer;
 use serde::{Deserialize, Deserializer, de};
+use std::collections::BTreeMap;
 use strum::IntoEnumIterator;
 use strum_macros::Display;
 
@@ -205,6 +206,9 @@ pub struct Step {
     pub requires: Vec<Require>,
     #[serde(default)]
     pub provides: Vec<String>,
+
+    pub extends: Option<String>,
+    pub with: Option<BTreeMap<String, String>>,
 
     #[serde(skip_deserializing)]
     pub source_file: String,

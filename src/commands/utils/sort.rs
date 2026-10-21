@@ -230,8 +230,12 @@ fn filter_requires(step: &mut Step, os_info: &OsInfo) -> anyhow::Result<()> {
 
         if require.when_script.is_some() {
             check_step_env(step)?;
-            let script =
-                runner::Script::from(require.when_script.as_ref().unwrap(), &step.defaults);
+            let script = runner::Script::from_step(
+                require.when_script.as_ref().unwrap(),
+                &step.defaults,
+                &step.id,
+                &step.with,
+            )?;
             let run = run_noninteractive_script(
                 &script,
                 Path::new(&step.source_file).parent().unwrap(),
@@ -282,6 +286,7 @@ mod tests {
     use crate::config::expr::Expr;
     use crate::config::{Require, Script, Step, StepSelectionReason};
     use crate::system::os_info::Platform;
+    use std::collections::BTreeMap;
 
     fn make_step(id: &str, requires: Vec<&str>, provides: Vec<&str>) -> Step {
         Step {
@@ -585,6 +590,36 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("multiple filtered steps have the same provide: step_completed"));
+    }
+
+    #[test]
+    fn test_filter_requires_when_script_receives_with_vars() {
+        // Regression: `requires[].when` scripts are executed by filter_requires and must
+        // receive the template variables injected from the step's `with`, exactly like
+        // step-level `when` scripts do.
+        let mut step = Step {
+            id: "consumer".to_string(),
+            with: Some(BTreeMap::from([(
+                "MEPRIS_REQ_WHEN_VAR_12345".to_string(),
+                "foo".to_string(),
+            )])),
+            requires: vec![Require {
+                id: "provider".to_string(),
+                os: None,
+                when_script: Some(Script {
+                    shell: None,
+                    code: "[[ \"$MEPRIS_REQ_WHEN_VAR_12345\" == \"foo\" ]]".to_string(),
+                }),
+            }],
+            source_file: "/test.yaml".to_string(),
+            ..Default::default()
+        };
+
+        filter_requires(&mut step, &make_os_info()).unwrap();
+
+        // The when-script passes only if $MEPRIS_REQ_WHEN_VAR_12345 == "foo", i.e. only
+        // if the value from `with` was injected into the script's environment.
+        assert_eq!(step.requires.len(), 1);
     }
 
     #[test]

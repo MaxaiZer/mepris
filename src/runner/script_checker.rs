@@ -50,7 +50,9 @@ impl ScriptChecker for DefaultScriptChecker {
         let args = match script.shell {
             Shell::Bash => vec!["-n".to_string(), path_str.to_string()],
             Shell::PowerShell => vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command],
-            Shell::PowerShellCore => vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command],
+            Shell::PowerShellCore => {
+                vec!["-NoProfile".to_string(), "-Command".to_string(), ps_command]
+            }
         };
 
         let output = Command::new(cmd)
@@ -90,6 +92,7 @@ fn test_checked_script_saved() {
     let script = Script {
         shell: Shell::Bash,
         code: "echo \"bash\"".to_string(),
+        env_values: std::collections::BTreeMap::new(),
     };
     assert!(!checker.is_checked(&script));
     checker.check_script(&script, false).unwrap();

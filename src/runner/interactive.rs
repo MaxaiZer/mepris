@@ -668,6 +668,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "echo hello".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
@@ -731,6 +732,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: long_script,
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
@@ -766,6 +768,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: long_script,
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
@@ -795,10 +798,12 @@ mod tests {
             pre_script: Some(Script {
                 shell: Shell::Bash,
                 code: "pre-install".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "main-install".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
@@ -1030,6 +1035,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: long_script,
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
@@ -1066,6 +1072,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "echo test".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             packages: vec![Package {
                 name: "mypackage".to_string(),
@@ -1105,6 +1112,7 @@ mod tests {
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "echo test".to_string(),
+                env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,

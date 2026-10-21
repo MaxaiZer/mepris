@@ -14,35 +14,32 @@ defaults:
   windows_package_manager: scoop
 
 steps:
-  - id: terminal-core
+  - id: neovim-linux-helpers
+    os: "linux"
+    packages: ["wl-clipboard"]
+    provides: ["neovim-linux-helpers"]
+
+  - id: neovim
     tags: ["terminal"]
-    packages: ["ripgrep", "neovim"]
-
-  - id: install-nvidia-pascal-drivers
-    os: "%arch"
-    when: |  #only if nvidia pascal card
-      lspci | grep -i 'NVIDIA.*GP10' >/dev/null 2>&1
-    packages:
-      [
-        "nvidia-580xx-dkms",
-        "nvidia-580xx-utils",
-        "lib32-nvidia-580xx-utils",
-        "nvidia-580xx-settings",
-        "opencl-nvidia-580xx",
-      ]
-    package_source: aur
-
-  - id: install-cron-arch
-    os: "%arch"
-    packages: ["cronie"]
-    script: sudo systemctl enable --now cronie.service
-    check: systemctl is-active --quiet cronie.service
+    packages: ["neovim"]
+    requires:
+      - id: neovim-linux-helpers
+        os: "linux"
+      - nerd-fonts
+    provides: ["nvim"]
 
   - id: nerd-fonts-windows
     os: "windows"
     tags: ["terminal", "fonts"]
     pre_script: scoop bucket add nerd-fonts
     packages: ["JetBrainsMono-NF"]
+    provides: ["nerd-fonts"]
+
+  - id: install-cron-arch
+    os: "%arch"
+    packages: ["cronie"]
+    script: sudo systemctl enable --now cronie.service
+    check: systemctl is-active --quiet cronie.service
 
   - id: setup-git
     tags: ["git"]

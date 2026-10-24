@@ -127,7 +127,13 @@ fn add_dependencies(
     os_info: &OsInfo,
 ) -> anyhow::Result<()> {
     let mut stack: Vec<usize> = Vec::new();
-    let mut checked: HashSet<usize> = HashSet::new();
+    let mut scheduled_steps: HashSet<usize> = HashSet::new();
+
+    for (idx, step) in steps.iter().enumerate() {
+        if step.selection_reason == Some(StepSelectionReason::MatchedFilter) {
+            scheduled_steps.insert(idx);
+        }
+    }
 
     for step in steps.iter_mut() {
         // we need only matched steps, and they are added before skipped - can safely break
@@ -145,7 +151,7 @@ fn add_dependencies(
             providers,
             unknown_requires,
             &mut stack,
-            &mut checked,
+            &mut scheduled_steps,
             os_info,
         )?;
     }
@@ -163,7 +169,7 @@ fn add_dependencies(
             providers,
             unknown_requires,
             &mut stack,
-            &mut checked,
+            &mut scheduled_steps,
             os_info,
         )?;
     }
@@ -176,7 +182,7 @@ fn push_step_dependencies(
     providers: &HashMap<String, Vec<usize>>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
     stack: &mut Vec<usize>,
-    checked: &mut HashSet<usize>,
+    scheduled_steps: &mut HashSet<usize>,
     os_info: &OsInfo,
 ) -> anyhow::Result<()> {
     // requires whose provider was already handled in a previous run are considered satisfied
@@ -204,9 +210,9 @@ fn push_step_dependencies(
 
             let provider_step_idx = provider_steps[0];
 
-            if !checked.contains(&provider_step_idx) {
+            if !scheduled_steps.contains(&provider_step_idx) {
                 stack.push(provider_step_idx);
-                checked.insert(provider_step_idx);
+                scheduled_steps.insert(provider_step_idx);
             }
         } else {
             unknown_requires
@@ -590,6 +596,57 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("multiple filtered steps have the same provide: step_completed"));
+    }
+
+    #[test]
+    fn test_requires_when_runs_once_when_provider_is_selected() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("when.log");
+
+        let dependency = Step {
+            id: "dependency".to_string(),
+            provides: vec!["dependency".to_string()],
+            source_file: "/test.yaml".to_string(),
+            ..Default::default()
+        };
+        let provider = Step {
+            id: "provider".to_string(),
+            provides: vec!["provider".to_string()],
+            requires: vec![Require {
+                id: "dependency".to_string(),
+                os: None,
+                when_script: Some(Script {
+                    shell: None,
+                    code: format!("echo hit >> '{}'", marker.display()),
+                }),
+            }],
+            source_file: "/test.yaml".to_string(),
+            ..Default::default()
+        };
+        let consumer = Step {
+            id: "consumer".to_string(),
+            requires: vec![Require {
+                id: "provider".to_string(),
+                os: None,
+                when_script: None,
+            }],
+            source_file: "/test.yaml".to_string(),
+            ..Default::default()
+        };
+
+        let filter_res =
+            make_filters_result(vec![&consumer, &provider], vec![(ByTags, &dependency)]);
+        let steps = toposort_steps(&filter_res, &make_os_info()).unwrap();
+
+        let marker_content = std::fs::read_to_string(&marker).unwrap();
+        assert_eq!(marker_content, "hit\n");
+        assert_eq!(
+            steps
+                .iter()
+                .map(|step| step.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["dependency", "provider", "consumer"]
+        );
     }
 
     #[test]

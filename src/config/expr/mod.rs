@@ -97,3 +97,31 @@ fn build_expr(pair: Pair<Rule>) -> Result<Expr> {
         _ => bail!(format!("Unexpected rule: {:?}", pair.as_rule())),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+
+    #[test]
+    fn test_parse_rejects_spaces_inside_words() {
+        assert!(parse("a b").is_err());
+    }
+
+    #[test]
+    fn test_parse_rejects_trailing_input() {
+        assert!(parse("a) garbage").is_err());
+        assert!(parse("a && junk ???").is_err());
+    }
+
+    #[test]
+    fn test_parse_rejects_truncated_expressions() {
+        assert!(parse("linux &&").is_err());
+        assert!(parse("linux) || windows").is_err());
+    }
+
+    #[test]
+    fn test_parse_accepts_valid_nested_expression() {
+        assert!(parse("a && (b || !c)").is_ok());
+        assert!(parse(" a && (b || !c) ").is_ok());
+    }
+}

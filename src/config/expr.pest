@@ -1,9 +1,9 @@
 WHITESPACE = _{ " " | "\t" }
 
-expr       = { or_expr }
+expr       = { SOI ~ or_expr ~ EOI }
 or_expr    = { and_expr ~ ( "||" ~ and_expr )* }
 and_expr   = { not_expr ~ ( "&&" ~ not_expr )* }
 not_expr   = { not* ~ atom }
 not        = { "!" }
-atom       = { word | "(" ~ expr ~ ")" }
-word       = { (ASCII_ALPHANUMERIC | "_" | "-" | "%")+ }
+atom       = { word | "(" ~ or_expr ~ ")" }
+word       = @{ (ASCII_ALPHANUMERIC | "_" | "-" | "%")+ }

@@ -304,3 +304,53 @@ steps:
     assert!(output.contains("file"));
     assert!(output.contains("child.yaml"));
 }
+
+#[test]
+fn test_list_steps_empty_config() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let file_path = dir.path().join("file.yaml");
+    let mut output = Vec::new();
+
+    fs::write(&file_path, "steps: []\n").expect("Failed to write file.yaml");
+
+    let res = handle(
+        ListStepsArgs {
+            file: file_path.to_str().unwrap().to_string(),
+            tags_expr: None,
+            plain: false,
+            all: false,
+        },
+        &mut output,
+    );
+
+    assert!(res.is_ok());
+}
+
+#[test]
+fn test_list_steps_filtered_empty_selection() {
+    let dir = tempdir().expect("Failed to create temp dir");
+    let file_path = dir.path().join("file.yaml");
+    let mut output = Vec::new();
+
+    fs::write(
+        &file_path,
+        r#"
+steps:
+  - id: "step1"
+    tags: ["a"]
+"#,
+    )
+    .expect("Failed to write file.yaml");
+
+    let res = handle(
+        ListStepsArgs {
+            file: file_path.to_str().unwrap().to_string(),
+            tags_expr: Some("!a".to_string()),
+            plain: false,
+            all: false,
+        },
+        &mut output,
+    );
+
+    assert!(res.is_ok());
+}

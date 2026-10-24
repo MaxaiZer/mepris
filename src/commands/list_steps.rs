@@ -45,7 +45,11 @@ pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
         .map(|step| step.source_file.as_str())
         .collect::<HashSet<_>>();
 
-    let print_source = sources.len() > 1 || sources.iter().next().unwrap() != &args.file;
+    let print_source = sources.len() > 1
+        || sources
+            .iter()
+            .next()
+            .is_some_and(|source| source != &args.file);
 
     let mut headers = vec!["id", "tags"];
     if args.all {

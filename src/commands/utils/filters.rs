@@ -8,7 +8,7 @@ use crate::runner;
 use crate::runner::script::{ScriptStatus, run_noninteractive_script};
 use crate::system::os_info::OsInfo;
 use anyhow::{Context, bail};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::{debug, debug_span};
 
@@ -272,6 +272,47 @@ fn filter_by_previously_run<'a>(
     })
 }
 
+fn collect_when_candidates<'a>(
+    selected_steps: &[&'a Step],
+    all_steps: &[&'a Step],
+    filters: &AllFiltersResult<'a>,
+) -> Vec<&'a Step> {
+    let mut providers: HashMap<&'a str, Vec<&'a Step>> = HashMap::new();
+
+    for &step in all_steps {
+        if filters.is_excluded_by(&step.id, StepFilter::ByOs)
+            || filters.is_excluded_by(&step.id, StepFilter::ByPreviousRunState)
+        {
+            continue;
+        }
+
+        for provide in &step.provides {
+            providers.entry(provide.as_str()).or_default().push(step);
+        }
+    }
+
+    let mut needed: HashSet<&'a str> = selected_steps.iter().map(|s| s.id.as_str()).collect();
+    let mut queue: Vec<&'a Step> = selected_steps.to_vec();
+
+    while let Some(step) = queue.pop() {
+        for require in &step.requires {
+            if let Some(provider_steps) = providers.get(require.id.as_str()) {
+                for &provider in provider_steps {
+                    if needed.insert(provider.id.as_str()) {
+                        queue.push(provider);
+                    }
+                }
+            }
+        }
+    }
+
+    all_steps
+        .iter()
+        .copied()
+        .filter(|step| needed.contains(step.id.as_str()))
+        .collect()
+}
+
 pub fn filter_steps<'a>(
     steps: &'a [Step],
     config: &FilterConfig,
@@ -287,7 +328,7 @@ pub fn filter_steps<'a>(
     if !config.apply_ids.is_empty() {
         let filter_by_ids = filter_by_ids(&all_steps, &config.apply_ids)?;
         res.add_not_matching(&filter_by_ids);
-        filtered_by_ids = filter_by_ids.matching; //to preserve ids order of selected steps
+        filtered_by_ids = filter_by_ids.matching;
     }
 
     if let Some(tags_expr) = config.apply_tags.as_ref() {
@@ -306,58 +347,33 @@ pub fn filter_steps<'a>(
         res.add_not_matching(&filter_by_previous_run);
     }
 
-    // Run when-scripts only for steps that may participate in execution graph.
-    //
-    // Rules:
-    // - OS-filtered or previously run steps are always excluded
-    // - If no ids filter is provided, all remaining steps are checked
-    // - If ids filter is provided:
-    //     * explicitly selected steps are checked
-    //     * steps that can be pulled as dependencies (have provides) are also checked
-    //
-    // This avoids running when-scripts for steps that can never be executed.
+    let selected_steps: Vec<&Step> = if filtered_by_ids.is_empty() {
+        all_steps
+            .iter()
+            .copied()
+            .filter(|s| !res.excluded_steps.contains_key(&s.id))
+            .collect()
+    } else {  //to preserve ids order of selected steps
+        filtered_by_ids
+            .iter()
+            .copied()
+            .filter(|s| !res.excluded_steps.contains_key(&s.id))
+            .collect()
+    };
+
+    // Run when-scripts only for selected steps and steps statically reachable
+    // as their dependencies. OS-filtered and previously run steps are never
+    // candidates, but unselected and tag-filtered-out steps can become
+    // dependencies and are kept in the provider map.
     if config.apply_when {
-        let filter_by_when: FilterResult = filter_by_when_script(
-            &all_steps
-                .iter()
-                .filter(|s| {
-                    if res.is_excluded_by(s.id.as_str(), StepFilter::ByOs) {
-                        return false;
-                    }
-
-                    if res.is_excluded_by(s.id.as_str(), StepFilter::ByPreviousRunState) {
-                        return false;
-                    }
-
-                    let has_ids_filter = !config.apply_ids.is_empty();
-                    let can_be_dependency = !s.provides.is_empty();
-                    let explicitly_selected = !res.is_excluded_by(s.id.as_str(), StepFilter::ByIds)
-                        && !res.is_excluded_by(s.id.as_str(), StepFilter::ByTags);
-
-                    if !has_ids_filter {
-                        return true;
-                    }
-
-                    explicitly_selected || can_be_dependency
-                })
-                .cloned()
-                .collect::<Vec<&Step>>(),
-        )?;
-
+        let candidates = collect_when_candidates(&selected_steps, &all_steps, &res);
+        let filter_by_when = filter_by_when_script(&candidates)?;
         res.add_not_matching(&filter_by_when);
     }
 
-    if filtered_by_ids.is_empty() {
-        res.filtered_steps = all_steps;
-    } else {
-        res.filtered_steps = filtered_by_ids;
-    }
-
-    res.filtered_steps = res
-        .filtered_steps
-        .iter()
+    res.filtered_steps = selected_steps
+        .into_iter()
         .filter(|s| !res.excluded_steps.contains_key(&s.id))
-        .cloned()
         .collect();
 
     debug!(event_type=%EventType::FilterCompleted);
@@ -560,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_filter_steps_with_when_script_execution() {
-        use crate::config::{Script, Step};
+        use crate::config::{Require, Script, Step};
         use std::fs;
         use tempfile::tempdir;
 
@@ -576,6 +592,11 @@ mod tests {
                 }),
                 source_file: "/file.yaml".to_string(),
                 provides: vec!["p1".into()],
+                requires: vec![Require {
+                    id: "dep".into(),
+                    os: None,
+                    when_script: None,
+                }],
                 ..Default::default()
             },
             Step {
@@ -644,11 +665,153 @@ mod tests {
         // step2 shouldn't run (excluded by os filter)
         assert!(!executed_steps.contains(&"step2"));
 
-        // step3 and step5 should run (dependency)
+        // step3 should run because step1 requires its provide
         assert!(executed_steps.contains(&"step3"));
-        assert!(executed_steps.contains(&"step5"));
+
+        // step5 shouldn't run - it has provides, but is not reachable from step1
+        assert!(!executed_steps.contains(&"step5"));
 
         // step4 shouldn't run - empty provides and there is ids filter
         assert!(!executed_steps.contains(&"step4"));
+
+        assert_eq!(executed_steps.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_steps_runs_when_only_for_reachable_dependencies() {
+        use crate::config::{Require, Script, Step};
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let log_file = dir.path().join("log.txt");
+
+        let steps = vec![
+            Step {
+                id: "selected".into(),
+                tags: vec!["go".into()],
+                requires: vec![Require {
+                    id: "dep".into(),
+                    os: None,
+                    when_script: None,
+                }],
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "dep".into(),
+                tags: vec!["other".into()],
+                provides: vec!["dep".into()],
+                when_script: Some(Script {
+                    shell: None,
+                    code: format!("echo dep >> {}", log_file.display()),
+                }),
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "unrelated".into(),
+                tags: vec!["other".into()],
+                env: vec!["MEPRIS_TAG_EXCLUDED_ENV".into()],
+                provides: vec!["unrelated-artifact".into()],
+                when_script: Some(Script {
+                    shell: None,
+                    code: format!("echo unrelated >> {}", log_file.display()),
+                }),
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let os_info = create_os_info(Platform::Linux, None, vec![]);
+
+        let result = filter_steps(
+            &steps,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_tags("go".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(result.filtered_steps.len(), 1);
+        assert_eq!(result.filtered_steps[0].id, "selected");
+
+        let log_content = fs::read_to_string(log_file).expect("Failed to read log file");
+        let executed_steps: Vec<&str> = log_content.lines().collect();
+        assert_eq!(executed_steps, vec!["dep"]);
+    }
+
+    #[test]
+    fn test_filter_steps_runs_when_for_transitive_dependencies() {
+        use crate::config::{Require, Script, Step};
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().expect("Failed to create temp dir");
+        let log_file = dir.path().join("log.txt");
+
+        let steps = vec![
+            Step {
+                id: "selected".into(),
+                requires: vec![Require {
+                    id: "a".into(),
+                    os: None,
+                    when_script: None,
+                }],
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "dep1".into(),
+                provides: vec!["a".into()],
+                requires: vec![Require {
+                    id: "b".into(),
+                    os: None,
+                    when_script: None,
+                }],
+                when_script: Some(Script {
+                    shell: None,
+                    code: format!("echo dep1 >> {}", log_file.display()),
+                }),
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "dep2".into(),
+                provides: vec!["b".into()],
+                when_script: Some(Script {
+                    shell: None,
+                    code: format!("echo dep2 >> {}", log_file.display()),
+                }),
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+            Step {
+                id: "unrelated".into(),
+                provides: vec!["c".into()],
+                when_script: Some(Script {
+                    shell: None,
+                    code: format!("echo unrelated >> {}", log_file.display()),
+                }),
+                source_file: "/file.yaml".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let os_info = create_os_info(Platform::Linux, None, vec![]);
+
+        filter_steps(
+            &steps,
+            &FilterConfig::new()
+                .apply_os(os_info)
+                .apply_when()
+                .apply_ids(vec!["selected".to_string()]),
+        )
+        .unwrap();
+
+        let log_content = fs::read_to_string(log_file).expect("Failed to read log file");
+        let executed_steps: Vec<&str> = log_content.lines().collect();
+        assert_eq!(executed_steps, vec!["dep1", "dep2"]);
     }
 }

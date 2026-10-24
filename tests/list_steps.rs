@@ -1,7 +1,7 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use mepris::{cli::ListStepsArgs, commands::list_steps::handle};
-use tempfile::tempdir;
+use tempfile::{tempdir, tempdir_in};
 
 #[test]
 #[cfg(unix)]
@@ -209,6 +209,37 @@ steps:
         ListStepsArgs {
             file: file_path.to_str().unwrap().to_string(),
             tags_expr: Some("tag1".to_string()),
+            plain: false,
+            all: false,
+        },
+        &mut output,
+    );
+    let output = String::from_utf8_lossy(&output);
+    assert!(res.is_ok());
+    assert!(!output.contains("file"));
+}
+
+#[test]
+fn test_list_steps_relative_one_file_no_file_header() {
+    let dir = tempdir_in(".").expect("Failed to create temp dir");
+    let file_path = dir.path().join("file.yaml");
+    let relative_file = Path::new(dir.path().file_name().unwrap()).join("file.yaml");
+    let mut output = Vec::new();
+
+    fs::write(
+        &file_path,
+        r#"
+        steps:
+          - id: "step1"
+            tags: ["tag1"]
+        "#,
+    )
+    .expect("Failed to write file.yaml");
+
+    let res = handle(
+        ListStepsArgs {
+            file: relative_file.to_str().unwrap().to_string(),
+            tags_expr: None,
             plain: false,
             all: false,
         },

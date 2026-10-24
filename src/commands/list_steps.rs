@@ -1,7 +1,7 @@
 use std::{collections::HashSet, io::Write, path::Path};
 
 use crate::commands::utils::filters::{filter_by_os, filter_by_tags};
-use crate::config;
+use crate::{config, utils};
 use crate::config::ValidationMode;
 use crate::config::expr::os::eval_os_expr;
 use crate::{cli::ListStepsArgs, config::Step, system::os_info::OS_INFO};
@@ -45,11 +45,12 @@ pub fn handle(args: ListStepsArgs, out: &mut impl Write) -> Result<()> {
         .map(|step| step.source_file.as_str())
         .collect::<HashSet<_>>();
 
+    let config_path = utils::file::get_absolute_path(&args.file, None)?;
     let print_source = sources.len() > 1
         || sources
             .iter()
             .next()
-            .is_some_and(|source| source != &args.file);
+            .is_some_and(|source| Path::new(*source) != config_path.as_path());
 
     let mut headers = vec!["id", "tags"];
     if args.all {

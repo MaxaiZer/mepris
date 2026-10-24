@@ -1,9 +1,22 @@
 use crate::logging::CustomLayer;
 use std::io;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use tracing::dispatcher::Dispatch;
+use tracing::subscriber::NoSubscriber;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
+
+static KEEPALIVE_DISPATCHES: OnceLock<[Dispatch; 2]> = OnceLock::new();
+
+fn keepalive_dispatches() {
+    KEEPALIVE_DISPATCHES.get_or_init(|| {
+        [
+            Dispatch::new(NoSubscriber::new()),
+            Dispatch::new(NoSubscriber::new()),
+        ]
+    });
+}
 
 pub struct TraceBuffer(pub Arc<Mutex<Vec<u8>>>);
 
@@ -25,6 +38,8 @@ impl TraceBuffer {
 }
 
 pub fn run_with_tracing(debug: bool, f: impl FnOnce()) -> TraceBuffer {
+    keepalive_dispatches();
+
     let filter = if debug {
         EnvFilter::new("debug")
     } else {
@@ -38,6 +53,7 @@ pub fn run_with_tracing(debug: bool, f: impl FnOnce()) -> TraceBuffer {
         .with(CustomLayer::new(TraceBuffer(buf.0.clone())));
 
     tracing::subscriber::with_default(subscriber, || {
+        tracing::callsite::rebuild_interest_cache();
         f();
     });
 

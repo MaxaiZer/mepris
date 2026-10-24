@@ -79,7 +79,11 @@ pub fn ask_confirmation(
     loop {
         out.flush()?;
         let mut input = String::new();
-        read.read_line(&mut input)?;
+        if read.read_line(&mut input)? == 0 {
+            writeln!(out, "Input closed, aborting.")?;
+            out.flush()?;
+            return Ok(Decision::Abort);
+        }
 
         input = input.trim().to_lowercase();
         if !letters.contains(&input) {

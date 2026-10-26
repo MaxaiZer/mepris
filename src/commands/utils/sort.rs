@@ -7,7 +7,7 @@ use crate::runner::script::ScriptStatus;
 use crate::system::os_info::OsInfo;
 use crate::{runner, utils};
 use anyhow::{Context, bail};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 pub fn toposort_steps(
@@ -46,7 +46,7 @@ pub fn toposort_steps(
         .map(|(idx, _)| idx)
         .collect();
 
-    let mut providers: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut providers: HashMap<String, Vec<ProviderRef>> = HashMap::new();
     let mut unknown_requires: HashMap<String, Vec<String>> = HashMap::new();
 
     fill_providers(&steps, &mut providers)?;
@@ -72,7 +72,8 @@ pub fn toposort_steps(
 
         for require in &requires {
             if let Some(provider_indices) = providers.get(&require.id) {
-                for &provider_idx in provider_indices {
+                for provider in provider_indices {
+                    let provider_idx = provider.step_idx;
                     let provider_id = steps[provider_idx].id.clone();
 
                     steps[provider_idx].dependency_of.push(step_id.clone());
@@ -99,9 +100,14 @@ pub fn toposort_steps(
     }
 }
 
+struct ProviderRef {
+    step_idx: usize,
+    step_id: String,
+}
+
 fn fill_providers(
     steps: &[Step],
-    providers: &mut HashMap<String, Vec<usize>>,
+    providers: &mut HashMap<String, Vec<ProviderRef>>,
 ) -> anyhow::Result<()> {
     for (i, step) in steps.iter().enumerate() {
         let mut checked_step_providers: HashSet<String> = HashSet::new();
@@ -111,7 +117,13 @@ fn fill_providers(
                 bail!("duplicated provide '{}' in step '{}'", provide, step.id);
             }
 
-            providers.entry(provide.clone()).or_default().push(i);
+            providers
+                .entry(provide.clone())
+                .or_default()
+                .push(ProviderRef {
+                    step_idx: i,
+                    step_id: step.id.clone(),
+                });
             checked_step_providers.insert(provide.clone());
         }
     }
@@ -122,7 +134,7 @@ fn fill_providers(
 fn add_dependencies(
     steps: &mut [Step],
     completed_steps_idx: &HashSet<usize>,
-    providers: &mut HashMap<String, Vec<usize>>,
+    providers: &mut HashMap<String, Vec<ProviderRef>>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
     os_info: &OsInfo,
 ) -> anyhow::Result<()> {
@@ -179,7 +191,7 @@ fn add_dependencies(
 fn push_step_dependencies(
     step: &mut Step,
     completed_steps_idx: &HashSet<usize>,
-    providers: &HashMap<String, Vec<usize>>,
+    providers: &HashMap<String, Vec<ProviderRef>>,
     unknown_requires: &mut HashMap<String, Vec<String>>,
     stack: &mut Vec<usize>,
     scheduled_steps: &mut HashSet<usize>,
@@ -189,7 +201,7 @@ fn push_step_dependencies(
     step.requires.retain(|r| match providers.get(&r.id) {
         Some(indexes) => {
             if indexes.len() == 1 {
-                !completed_steps_idx.contains(&indexes[0])
+                !completed_steps_idx.contains(&indexes[0].step_idx)
             } else {
                 true
             }
@@ -202,13 +214,28 @@ fn push_step_dependencies(
     for require in &step.requires {
         if let Some(provider_steps) = providers.get(&require.id) {
             if provider_steps.len() > 1 {
+                let provider_ids: BTreeSet<&str> = provider_steps
+                    .iter()
+                    .map(|provider| provider.step_id.as_str())
+                    .collect();
+
+                if provider_ids.len() == 1 {
+                    bail!(
+                        "step '{}' is selected {} times, but provides '{}' required by step '{}'; select it only once",
+                        provider_steps[0].step_id,
+                        provider_steps.len(),
+                        require.id,
+                        step.id
+                    );
+                }
+
                 bail!(
                     "multiple filtered steps have the same provide: {}",
                     require.id
                 );
             }
 
-            let provider_step_idx = provider_steps[0];
+            let provider_step_idx = provider_steps[0].step_idx;
 
             if !scheduled_steps.contains(&provider_step_idx) {
                 stack.push(provider_step_idx);
@@ -596,6 +623,46 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("multiple filtered steps have the same provide: step_completed"));
+    }
+
+    #[test]
+    fn test_duplicate_required_provider_is_rejected() {
+        let provider = make_step("provider", vec![], vec!["artifact"]);
+        let consumer = make_step("consumer", vec!["artifact"], vec![]);
+        let filter_res = make_filters_result(vec![&provider, &provider, &consumer], vec![]);
+
+        let result = toposort_steps(&filter_res, &make_os_info());
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("step 'provider' is selected 2 times")
+                && err.contains("provides 'artifact'")
+                && err.contains("required by step 'consumer'"),
+            "unexpected err: {err}"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_selected_step_runs_twice() {
+        let step = make_step("step", vec![], vec![]);
+        let filter_res = make_filters_result(vec![&step, &step], vec![]);
+
+        let result = toposort_steps(&filter_res, &make_os_info()).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|step| step.id == "step"));
+    }
+
+    #[test]
+    fn test_duplicate_provider_not_required_runs_twice() {
+        let provider = make_step("provider", vec![], vec!["artifact"]);
+        let filter_res = make_filters_result(vec![&provider, &provider], vec![]);
+
+        let result = toposort_steps(&filter_res, &make_os_info()).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|step| step.id == "provider"));
     }
 
     #[test]

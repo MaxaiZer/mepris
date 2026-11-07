@@ -1,5 +1,5 @@
 use mepris::EnvGuard;
-use mepris::cli::{RunArgs};
+use mepris::cli::RunArgs;
 use std::fs;
 use tempfile::tempdir;
 
@@ -77,5 +77,9 @@ fn test_bash_run_script_from_file_dir() {
     );
     let output = String::from_utf8_lossy(&output);
     assert!(res.is_ok(), "run failed: {:?}", res.err());
-    assert!(output.contains("temp file"), "unexpected output: {}", output);
+    assert!(
+        output.contains("temp file"),
+        "unexpected output: {}",
+        output
+    );
 }

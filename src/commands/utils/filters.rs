@@ -353,7 +353,8 @@ pub fn filter_steps<'a>(
             .copied()
             .filter(|s| !res.excluded_steps.contains_key(&s.id))
             .collect()
-    } else {  //to preserve ids order of selected steps
+    } else {
+        //to preserve ids order of selected steps
         filtered_by_ids
             .iter()
             .copied()

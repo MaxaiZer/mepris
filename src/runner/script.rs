@@ -1,7 +1,7 @@
-use crate::{config, utils};
 use crate::runner::script_checker::ScriptChecker;
 use crate::system::os_info::{OS_INFO, Platform};
 use crate::system::shell::Shell;
+use crate::{config, utils};
 use anyhow::{Context, bail};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};

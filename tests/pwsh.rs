@@ -1,6 +1,10 @@
+#[cfg(feature = "pwsh-tests")]
 use mepris::EnvGuard;
+#[cfg(feature = "pwsh-tests")]
 use mepris::cli::RunArgs;
+#[cfg(feature = "pwsh-tests")]
 use std::fs;
+#[cfg(feature = "pwsh-tests")]
 use tempfile::tempdir;
 
 #[test]
@@ -80,5 +84,9 @@ fn test_pwsh_run_script_from_file_dir() {
     );
     let output = String::from_utf8_lossy(&output);
     assert!(res.is_ok(), "{}", res.err().unwrap());
-    assert!(output.contains("temp file"), "unexpected output: {}", output);
+    assert!(
+        output.contains("temp file"),
+        "unexpected output: {}",
+        output
+    );
 }

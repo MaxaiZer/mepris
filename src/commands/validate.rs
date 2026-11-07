@@ -182,12 +182,12 @@ mod tests {
     }
 
     impl ScriptChecker for MockChecker {
-        fn check_script(&mut self, script: &runner::Script, _: bool) -> Result<()> {
+        fn check_script(&mut self, _: &runner::Script, _: bool) -> Result<()> {
             self.calls += 1;
             Ok(())
         }
 
-        fn is_checked(&self, script: &runner::Script) -> bool {
+        fn is_checked(&self, _: &runner::Script) -> bool {
             false
         }
     }

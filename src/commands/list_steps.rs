@@ -1,10 +1,10 @@
 use std::{collections::HashSet, io::Write, path::Path};
 
 use crate::commands::utils::filters::{filter_by_os, filter_by_tags};
-use crate::{config, utils};
 use crate::config::ValidationMode;
 use crate::config::expr::os::eval_os_expr;
 use crate::{cli::ListStepsArgs, config::Step, system::os_info::OS_INFO};
+use crate::{config, utils};
 use anyhow::Result;
 use comfy_table::{
     ContentArrangement, Table,

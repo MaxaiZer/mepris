@@ -282,7 +282,11 @@ mod tests {
         let (content, err, path) = deserialize_err(yaml);
         assert_eq!(path, "steps[0].requires");
         let span = calculate_labeled_span(&content, &err, &path).unwrap();
-        let line = content[span.offset()..].lines().next().unwrap();
+        assert!(
+            content[span.offset()..].lines().next().is_some(),
+            "span offset {} out of content bounds",
+            span.offset()
+        );
         assert_eq!(
             &content[span.offset()..span.offset() + span.len()],
             "\"not-a-list\""

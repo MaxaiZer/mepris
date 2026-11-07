@@ -403,8 +403,7 @@ mod tests {
     use rstest::rstest;
     use serial_test::serial;
     use std::io::sink;
-    use std::{collections::HashSet, fs, io};
-    use tempfile::tempdir;
+    use std::{collections::HashSet, io};
 
     struct FakeStateSaver;
     impl StateSaver for FakeStateSaver {
@@ -639,7 +638,7 @@ mod tests {
         }];
 
         let mut res: Result<Option<RunPlan>> = Ok(None);
-        let trace_output = run_with_tracing(false, || {
+        run_with_tracing(false, || {
             res = run(
                 &steps,
                 &RunParameters {

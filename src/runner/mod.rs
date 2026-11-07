@@ -287,7 +287,8 @@ pub fn run(
             bail!("cannot run step with broken dependencies without interactive mode")
         }
 
-        run_step(step, script_checker, out).context(format!("failed to run step '{}'", step.id))?;
+        run_step(step, &completion, script_checker, out)
+            .context(format!("failed to run step '{}'", step.id))?;
 
         if has_broken_deps {
             execution_results.insert(step.id.clone(), ExecutionResult::CompletedWithMissingDeps);
@@ -314,6 +315,7 @@ pub fn run(
 
 fn run_step(
     step: &Step,
+    completion: &StepCompletedResult,
     script_checker: &mut dyn ScriptChecker,
     out: &mut impl Write,
 ) -> Result<()> {
@@ -355,15 +357,16 @@ fn run_step(
 
     run_step_script("pre-script", &step.pre_script, out)?;
 
-    if !step.packages.is_empty() {
-        install_packages(
-            &step
-                .packages
-                .iter()
-                .map(|p| p.name.clone())
-                .collect::<Vec<String>>(),
-            &step.package_manager,
-        )?;
+    let packages_to_install = match completion {
+        StepCompletedResult::NotInstalledPackages(pkgs) => pkgs.clone(),
+        StepCompletedResult::NotInstalledPackageManager => {
+            step.packages.iter().map(|p| p.name.clone()).collect()
+        }
+        _ => Vec::new(),
+    };
+
+    if !packages_to_install.is_empty() {
+        install_packages(&packages_to_install, &step.package_manager)?;
     }
 
     run_step_script("script", &step.script, out)?;

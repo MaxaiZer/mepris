@@ -51,6 +51,11 @@ pub struct Package {
     pub used_alias: bool,
 }
 
+pub struct StepPackages {
+    pub manager: PackageManager,
+    pub packages: Vec<Package>,
+}
+
 #[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub enum StepCompletedResult {
     #[default]
@@ -71,8 +76,7 @@ enum ExecutionResult {
 #[derive(Default)]
 pub struct Step {
     pub id: String,
-    pub package_manager: PackageManager,
-    pub packages: Vec<Package>,
+    pub package_setup: Option<StepPackages>,
     pub pre_script: Option<Script>,
     pub script: Option<Script>,
     pub check_script: Option<Script>,
@@ -97,22 +101,30 @@ impl Step {
             }
         };
 
-        let pkg_manager = resolve_step_package_manager(config_step);
+        let package_setup = if config_step.packages.is_empty() {
+            None
+        } else {
+            let manager = resolve_step_package_manager(config_step)?.context(format!(
+                "No available package manager for step '{}'",
+                config_step.id
+            ))?;
 
-        let mut packages: Vec<Package> = Vec::new();
-        for cfg_pkg in &config_step.packages {
-            let mut resolved_pkg = Package {
-                name: aliases.resolve_name(cfg_pkg, &pkg_manager),
-                used_alias: false,
-            };
-            resolved_pkg.used_alias = cfg_pkg != &resolved_pkg.name;
-            packages.push(resolved_pkg);
-        }
+            let mut packages: Vec<Package> = Vec::new();
+            for cfg_pkg in &config_step.packages {
+                let mut resolved_pkg = Package {
+                    name: aliases.resolve_name(cfg_pkg, &manager),
+                    used_alias: false,
+                };
+                resolved_pkg.used_alias = cfg_pkg != &resolved_pkg.name;
+                packages.push(resolved_pkg);
+            }
+
+            Some(StepPackages { manager, packages })
+        };
 
         Ok(Step {
             id: config_step.id.clone(),
-            package_manager: pkg_manager,
-            packages,
+            package_setup,
             pre_script: resolve_script(&config_step.pre_script)?,
             script: resolve_script(&config_step.script)?,
             check_script: resolve_script(&config_step.check_script)?,
@@ -145,7 +157,7 @@ impl Step {
         &self,
         script_checker: Option<&mut dyn ScriptChecker>,
     ) -> Result<StepCompletedResult> {
-        if self.packages.is_empty() && self.check_script.is_none() {
+        if self.package_setup.is_none() && self.check_script.is_none() {
             return match self.script {
                 Some(_) => Ok(StepCompletedResult::HasScriptWithoutCheck),
                 None => Ok(StepCompletedResult::Completed),
@@ -161,30 +173,29 @@ impl Step {
             Ok(res)
         };
 
-        if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && !self.package_manager.is_available()
-        {
-            return exit(StepCompletedResult::NotInstalledPackageManager);
-        }
+        if let Some(setup) = &self.package_setup {
+            if std::env::var("MEPRIS_INSTALL_COMMAND").is_err() && !setup.manager.is_available() {
+                return exit(StepCompletedResult::NotInstalledPackageManager);
+            }
 
-        let mut not_installed_pkgs = Vec::new();
+            let mut not_installed_pkgs = Vec::new();
 
-        if !self.packages.is_empty() {
             let _packages_span = debug_span!("check_packages").entered();
 
-            for pkg in self.packages.iter() {
+            for pkg in &setup.packages {
                 let _package_span = debug_span!(SpanType::PackageCheck.as_str()).entered();
-                if !self.package_manager.is_installed(&pkg.name)? {
+                if !setup.manager.is_installed(&pkg.name)? {
                     not_installed_pkgs.push(pkg.name.clone());
                 }
             }
 
             debug!(event_type = %EventType::PackagesCheckCompleted.as_str());
-        }
 
-        if !not_installed_pkgs.is_empty() {
-            return exit(StepCompletedResult::NotInstalledPackages(
-                not_installed_pkgs,
-            ));
+            if !not_installed_pkgs.is_empty() {
+                return exit(StepCompletedResult::NotInstalledPackages(
+                    not_installed_pkgs,
+                ));
+            }
         }
 
         if let Some(check_script) = self.check_script.as_ref() {
@@ -357,16 +368,18 @@ fn run_step(
 
     run_step_script("pre-script", &step.pre_script, out)?;
 
-    let packages_to_install = match completion {
-        StepCompletedResult::NotInstalledPackages(pkgs) => pkgs.clone(),
-        StepCompletedResult::NotInstalledPackageManager => {
-            step.packages.iter().map(|p| p.name.clone()).collect()
-        }
-        _ => Vec::new(),
-    };
+    if let Some(setup) = &step.package_setup {
+        let packages_to_install = match completion {
+            StepCompletedResult::NotInstalledPackages(pkgs) => pkgs.clone(),
+            StepCompletedResult::NotInstalledPackageManager => {
+                setup.packages.iter().map(|p| p.name.clone()).collect()
+            }
+            _ => Vec::new(),
+        };
 
-    if !packages_to_install.is_empty() {
-        install_packages(&packages_to_install, &step.package_manager)?;
+        if !packages_to_install.is_empty() {
+            install_packages(&packages_to_install, &setup.manager)?;
+        }
     }
 
     run_step_script("script", &step.script, out)?;
@@ -704,7 +717,6 @@ mod tests {
                 env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
-            package_manager: PackageManager::Apt,
             ..Default::default()
         };
 
@@ -728,11 +740,13 @@ mod tests {
                 env_values: std::collections::BTreeMap::new(),
             }),
             source_file: "/test.yaml".to_string(),
-            package_manager: PackageManager::Apt,
-            packages: vec![Package {
-                name: "pkg".to_string(),
-                used_alias: false,
-            }],
+            package_setup: Some(StepPackages {
+                manager: PackageManager::Apt,
+                packages: vec![Package {
+                    name: "pkg".to_string(),
+                    used_alias: false,
+                }],
+            }),
             ..Default::default()
         };
 
@@ -749,7 +763,6 @@ mod tests {
         let step = Step {
             id: "test".to_string(),
             source_file: "/test.yaml".to_string(),
-            package_manager: PackageManager::Apt,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),
@@ -770,11 +783,13 @@ mod tests {
         let step = Step {
             id: "test".to_string(),
             source_file: "/test.yaml".to_string(),
-            package_manager: PackageManager::Choco,
-            packages: vec![Package {
-                name: "pkg".to_string(),
-                used_alias: false,
-            }],
+            package_setup: Some(StepPackages {
+                manager: PackageManager::Choco,
+                packages: vec![Package {
+                    name: "pkg".to_string(),
+                    used_alias: false,
+                }],
+            }),
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "exit 0".to_string(),

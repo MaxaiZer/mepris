@@ -122,8 +122,6 @@ fn print_step(
     out: &mut dyn Write,
     full: bool,
 ) -> Result<()> {
-    let pkg_manager = &step.package_manager;
-
     writeln!(out, "step {}", step.id.cyan())?;
     let max_script_lines = match full {
         true => usize::MAX,
@@ -134,7 +132,7 @@ fn print_step(
         writeln!(out, "pre_script:")?;
         output_script(&pre_script.code, max_script_lines, out)?;
     }
-    if !step.packages.is_empty() {
+    if let Some(setup) = &step.package_setup {
         let not_installed_pkgs: HashSet<String> = match &completion {
             StepCompletedResult::NotInstalledPackages(pkgs) => {
                 HashSet::from_iter(pkgs.iter().cloned())
@@ -145,7 +143,7 @@ fn print_step(
         let mut installed: Vec<&str> = Vec::new();
         let mut not_installed: Vec<&str> = Vec::new();
 
-        for pkg in &step.packages {
+        for pkg in &setup.packages {
             if *completion != StepCompletedResult::NotInstalledPackageManager
                 && not_installed_pkgs.contains(&pkg.name)
             {
@@ -157,7 +155,7 @@ fn print_step(
             }
         }
 
-        writeln!(out, "packages ({}):", pkg_manager)?;
+        writeln!(out, "packages ({}):", setup.manager)?;
         if !installed.is_empty() {
             writeln!(
                 out,
@@ -195,7 +193,7 @@ fn print_step(
         StepCompletedResult::FailedCheckScript => {
             writeln!(out, "status: {}", "check-script failed".yellow())?;
         }
-        StepCompletedResult::HasScriptWithoutCheck if step.packages.is_empty() => {
+        StepCompletedResult::HasScriptWithoutCheck if step.package_setup.is_none() => {
             writeln!(
                 out,
                 "status: {}",
@@ -233,7 +231,7 @@ mod tests {
     use crate::logging::test::run_with_tracing;
     use crate::runner::dry::RunPlan;
     use crate::runner::script::Script;
-    use crate::runner::{Package, Step};
+    use crate::runner::{Package, Step, StepPackages};
     use crate::system::pkg::PackageManager;
     use crate::system::shell::Shell;
     use std::io::{Cursor, sink};
@@ -664,11 +662,13 @@ mod tests {
     fn test_print_step_basic() -> Result<()> {
         let step = Step {
             id: "my-step".to_string(),
-            package_manager: PackageManager::Npm,
-            packages: vec![Package {
-                name: "pkg1".to_string(),
-                used_alias: false,
-            }],
+            package_setup: Some(StepPackages {
+                manager: PackageManager::Npm,
+                packages: vec![Package {
+                    name: "pkg1".to_string(),
+                    used_alias: false,
+                }],
+            }),
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "echo hello".to_string(),
@@ -732,7 +732,6 @@ mod tests {
             .join("\n");
         let step = Step {
             id: "long-step".to_string(),
-            package_manager: PackageManager::Npm,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: long_script,
@@ -768,7 +767,6 @@ mod tests {
             .join("\n");
         let step = Step {
             id: "long-step".to_string(),
-            package_manager: PackageManager::Npm,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: long_script,
@@ -798,7 +796,6 @@ mod tests {
     fn test_print_step_with_pre_script() -> Result<()> {
         let step = Step {
             id: "step-with-pre".to_string(),
-            package_manager: PackageManager::Npm,
             pre_script: Some(Script {
                 shell: Shell::Bash,
                 code: "pre-install".to_string(),
@@ -835,17 +832,19 @@ mod tests {
     fn test_print_step_with_not_installed_packages() -> Result<()> {
         let step = Step {
             id: "step-with-pkgs".to_string(),
-            package_manager: PackageManager::Npm,
-            packages: vec![
-                Package {
-                    name: "installed-pkg".to_string(),
-                    used_alias: false,
-                },
-                Package {
-                    name: "not-installed-pkg".to_string(),
-                    used_alias: false,
-                },
-            ],
+            package_setup: Some(StepPackages {
+                manager: PackageManager::Npm,
+                packages: vec![
+                    Package {
+                        name: "installed-pkg".to_string(),
+                        used_alias: false,
+                    },
+                    Package {
+                        name: "not-installed-pkg".to_string(),
+                        used_alias: false,
+                    },
+                ],
+            }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -872,7 +871,6 @@ mod tests {
     fn test_print_step_not_installed_package_manager() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -896,7 +894,6 @@ mod tests {
     fn test_ask_confirmation_run() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -929,7 +926,6 @@ mod tests {
     fn test_ask_confirmation_skip() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -954,7 +950,6 @@ mod tests {
     fn test_ask_confirmation_abort() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -979,7 +974,6 @@ mod tests {
     fn test_ask_confirmation_leave_mode() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -1004,7 +998,6 @@ mod tests {
     fn test_ask_confirmation_invalid_input() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -1035,7 +1028,6 @@ mod tests {
             .join("\n");
         let step = Step {
             id: "long-step".to_string(),
-            package_manager: PackageManager::Npm,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: long_script,
@@ -1072,16 +1064,18 @@ mod tests {
     fn test_ask_confirmation_shows_step_output() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "echo test".to_string(),
                 env_values: std::collections::BTreeMap::new(),
             }),
-            packages: vec![Package {
-                name: "mypackage".to_string(),
-                used_alias: false,
-            }],
+            package_setup: Some(StepPackages {
+                manager: PackageManager::Npm,
+                packages: vec![Package {
+                    name: "mypackage".to_string(),
+                    used_alias: false,
+                }],
+            }),
             source_file: "/test.yaml".to_string(),
             selection_reason: MatchedFilter,
             ..Default::default()
@@ -1112,7 +1106,6 @@ mod tests {
     fn test_ask_confirmation_broken_dependencies() -> Result<()> {
         let step = Step {
             id: "test-step".to_string(),
-            package_manager: PackageManager::Npm,
             script: Some(Script {
                 shell: Shell::Bash,
                 code: "echo test".to_string(),

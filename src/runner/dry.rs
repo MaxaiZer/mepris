@@ -64,12 +64,10 @@ pub fn run(steps: &[Step]) -> anyhow::Result<RunPlan> {
             ..Default::default()
         };
 
-        if !step.packages.is_empty() {
-            let package_manager = step.package_manager.clone();
-
+        if let Some(setup) = &step.package_setup {
             step_dry_run.package_manager = Some(PackageManagerInfo {
-                name: package_manager.to_string(),
-                installed: package_manager.is_available(),
+                name: setup.manager.to_string(),
+                installed: setup.manager.is_available(),
             });
 
             let not_installed_pkgs: HashSet<String> = match &step_completed_res {
@@ -79,7 +77,7 @@ pub fn run(steps: &[Step]) -> anyhow::Result<RunPlan> {
                 _ => HashSet::new(),
             };
 
-            step_dry_run.packages_to_install = step
+            step_dry_run.packages_to_install = setup
                 .packages
                 .iter()
                 .map(|p| PackageInfo {

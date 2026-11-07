@@ -9,8 +9,6 @@ use anyhow::{Context, Result, anyhow};
 use once_cell::sync::Lazy;
 
 pub static OS_INFO: Lazy<OsInfo> = Lazy::new(|| get_os_info().expect("Failed to get OS info"));
-pub static DEFAULT_PACKAGE_MANAGER: Lazy<PackageManager> =
-    Lazy::new(|| default_package_manager().expect("Failed to define the default package manager"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
@@ -83,19 +81,20 @@ fn get_os_info() -> Result<OsInfo> {
     })
 }
 
-fn default_package_manager() -> Result<PackageManager> {
+pub fn default_package_manager() -> Result<Option<PackageManager>> {
     let platform = OS_INFO.platform;
     if let Ok(fake) = std::env::var("MEPRIS_DEFAULT_PACKAGE_MANAGER") {
         return fake
             .parse()
+            .map(Some)
             .map_err(|_| anyhow!("Invalid fake package manager"));
     }
 
     if platform == Platform::MacOS {
-        return Ok(PackageManager::Brew);
+        return Ok(Some(PackageManager::Brew));
     }
     if platform == Platform::Windows {
-        return Ok(PackageManager::Winget);
+        return Ok(Some(PackageManager::Winget));
     }
 
     let managers = [
@@ -105,8 +104,5 @@ fn default_package_manager() -> Result<PackageManager> {
         PackageManager::Zypper,
     ];
 
-    managers
-        .into_iter()
-        .find(|mgr| mgr.is_available())
-        .ok_or_else(|| anyhow!("No available package manager"))
+    Ok(managers.into_iter().find(|mgr| mgr.is_available()))
 }

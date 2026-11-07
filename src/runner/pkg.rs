@@ -1,21 +1,18 @@
 use crate::config::Step;
 use crate::logging::EventType;
-use crate::system::os_info::{DEFAULT_PACKAGE_MANAGER, OS_INFO, Platform};
+use crate::system::os_info::{OS_INFO, Platform, default_package_manager};
 use crate::system::pkg::PackageManager;
 use anyhow::bail;
 use tracing::info;
 
-pub fn resolve_step_package_manager(step: &Step) -> PackageManager {
+pub fn resolve_step_package_manager(step: &Step) -> anyhow::Result<Option<PackageManager>> {
     if let Some(source) = &step.package_source {
-        if let Some(manager) = source
-            .get_package_managers()
+        let managers = source.get_package_managers();
+        return Ok(managers
             .iter()
             .find(|m| m.is_available())
-        {
-            return manager.clone();
-        } else {
-            return source.get_package_managers()[0].clone();
-        }
+            .or_else(|| managers.first())
+            .cloned());
     }
 
     if let Some(win_pm) = step
@@ -24,10 +21,10 @@ pub fn resolve_step_package_manager(step: &Step) -> PackageManager {
         .and_then(|d| d.windows_package_manager.clone())
         && OS_INFO.platform == Platform::Windows
     {
-        return win_pm;
+        return Ok(Some(win_pm));
     }
 
-    DEFAULT_PACKAGE_MANAGER.clone()
+    default_package_manager()
 }
 
 pub fn install_packages(packages: &[String], manager: &PackageManager) -> anyhow::Result<()> {

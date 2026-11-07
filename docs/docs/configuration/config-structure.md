@@ -44,6 +44,10 @@ Each step supports the following **optional** fields:
 - `extends`: Inherit the script fields from another step by id (see [Step templates](step-templates.md)).
 - `with`: Environment variable values passed to the referenced step via `extends` (see [Step templates](step-templates.md)).
 
+:::info
+Version constraints in `packages` (for example `typescript@5` for npm or `bash>=5.2` for pacman) are passed to the package manager when installing, but installed packages are matched by name only. If a package with the same name is already installed at a different version, it is treated as installed.
+:::
+
 ### Scripts
 
 Default shell for running scripts is `bash` for Linux/macOS and `powershell` for Windows.

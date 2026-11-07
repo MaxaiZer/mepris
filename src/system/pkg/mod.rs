@@ -106,15 +106,19 @@ impl PackageManager {
     }
 
     fn normalized_package_name(&self, pkg: &str) -> String {
-        if *self == Self::Uv {
-            const SPEC_STARTERS: [char; 7] = ['[', '@', '=', '~', '>', '<', '!'];
-            let end = pkg
-                .find(|c| SPEC_STARTERS.contains(&c))
-                .unwrap_or(pkg.len());
-            return pkg[..end].trim().to_string();
-        }
+        const UV_SPEC_STARTERS: [char; 7] = ['[', '@', '=', '~', '>', '<', '!'];
+        const RPM_SPEC_STARTERS: [char; 3] = ['=', '<', '>'];
 
-        pkg.to_string()
+        match self {
+            Self::Uv => strip_version_spec(pkg, &UV_SPEC_STARTERS),
+            Self::Npm => strip_npm_version(pkg),
+            Self::Cargo | Self::Scoop => strip_at_version(pkg),
+            Self::Apt => strip_version_spec(pkg, &['=']),
+            Self::Pacman | Self::Yay | Self::Paru | Self::Zypper => {
+                strip_version_spec(pkg, &RPM_SPEC_STARTERS)
+            }
+            _ => pkg.to_string(),
+        }
     }
 
     pub fn install(&self, pkgs: &[String]) -> anyhow::Result<()> {
@@ -250,6 +254,8 @@ impl PackageManager {
             return Ok(res == "0");
         }
 
+        let normalized = self.normalized_package_name(pkg);
+
         let cmd = match self {
             Self::Pacman | Self::Yay | Self::Paru => CommandSpec {
                 bin: "pacman".to_string(),
@@ -257,22 +263,22 @@ impl PackageManager {
             },
             Self::Apt => CommandSpec {
                 bin: "dpkg".to_string(),
-                args: vec!["-l".to_string(), pkg.to_string()],
+                args: vec!["-l".to_string(), normalized.clone()],
             },
             Self::Dnf | Self::Zypper => CommandSpec {
                 bin: "rpm".to_string(),
-                args: vec!["-q".to_string(), pkg.to_string()],
+                args: vec!["-q".to_string(), normalized.clone()],
             },
             Self::Flatpak => CommandSpec {
                 bin: "flatpak".to_string(),
-                args: vec!["info".to_string(), pkg.to_string()],
+                args: vec!["info".to_string(), normalized.clone()],
             },
             Self::Brew => CommandSpec {
                 bin: "brew".to_string(),
                 args: vec![
                     "list".to_string(),
                     "--versions".to_string(),
-                    pkg.to_string(),
+                    normalized.clone(),
                 ],
             },
             Self::Winget => CommandSpec {
@@ -336,14 +342,15 @@ impl PackageManager {
             }
 
             PackageManager::Pacman | PackageManager::Yay | PackageManager::Paru => {
-                Ok(out.lines().any(|line| line == pkg))
+                Ok(out.lines().any(|line| line == normalized))
             }
 
-            PackageManager::Brew => Ok(out.contains(pkg)),
+            PackageManager::Brew => Ok(out.contains(&normalized)),
 
-            PackageManager::Cargo => Ok(out
-                .lines()
-                .any(|line| line.starts_with(pkg) && line.contains(" v"))),
+            PackageManager::Cargo => Ok(out.lines().any(|line| {
+                line.strip_prefix(&normalized)
+                    .is_some_and(|rest| rest.starts_with(" v"))
+            })),
 
             PackageManager::Npm
             | PackageManager::Uv
@@ -354,6 +361,32 @@ impl PackageManager {
             }
         }
     }
+}
+
+fn strip_version_spec(pkg: &str, starters: &[char]) -> String {
+    let end = pkg.find(|c| starters.contains(&c)).unwrap_or(pkg.len());
+    pkg[..end].trim().to_string()
+}
+
+fn strip_at_version(pkg: &str) -> String {
+    pkg.split_once('@')
+        .map_or(pkg, |(name, _)| name)
+        .trim()
+        .to_string()
+}
+
+fn strip_npm_version(pkg: &str) -> String {
+    let name_start = if pkg.starts_with('@') {
+        pkg.find('/').map_or(1, |slash| slash + 1)
+    } else {
+        0
+    };
+
+    pkg[name_start..]
+        .find('@')
+        .map_or(pkg, |offset| &pkg[..name_start + offset])
+        .trim()
+        .to_string()
 }
 
 fn run_cacheable_is_installed(
@@ -445,10 +478,62 @@ mod tests {
     }
 
     #[test]
-    fn test_normalized_package_name_identity_for_other_managers() {
+    fn test_npm_normalized_package_name_strips_version() {
+        assert_eq!(
+            PackageManager::Npm.normalized_package_name("typescript@5"),
+            "typescript"
+        );
+        assert_eq!(
+            PackageManager::Npm.normalized_package_name("typescript@5.4.2"),
+            "typescript"
+        );
+        assert_eq!(
+            PackageManager::Npm.normalized_package_name("@angular/cli@18"),
+            "@angular/cli"
+        );
         assert_eq!(
             PackageManager::Npm.normalized_package_name("@angular/cli"),
             "@angular/cli"
+        );
+    }
+
+    #[test]
+    fn test_cargo_and_scoop_normalized_package_name_strips_version() {
+        assert_eq!(
+            PackageManager::Cargo.normalized_package_name("ripgrep@14"),
+            "ripgrep"
+        );
+        assert_eq!(
+            PackageManager::Scoop.normalized_package_name("7zip@25.01"),
+            "7zip"
+        );
+    }
+
+    #[test]
+    fn test_system_package_managers_normalize_version_specs() {
+        assert_eq!(
+            PackageManager::Apt.normalized_package_name("bash=5.2"),
+            "bash"
+        );
+        assert_eq!(
+            PackageManager::Pacman.normalized_package_name("bash>=5.2"),
+            "bash"
+        );
+        assert_eq!(
+            PackageManager::Zypper.normalized_package_name("bash<6"),
+            "bash"
+        );
+    }
+
+    #[test]
+    fn test_normalized_package_name_identity_for_other_managers() {
+        assert_eq!(
+            PackageManager::Brew.normalized_package_name("python@3.12"),
+            "python@3.12"
+        );
+        assert_eq!(
+            PackageManager::Dnf.normalized_package_name("gcc-c++"),
+            "gcc-c++"
         );
         assert_eq!(
             PackageManager::Cargo.normalized_package_name("ripgrep"),
